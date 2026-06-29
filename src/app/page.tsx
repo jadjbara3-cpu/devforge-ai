@@ -12,6 +12,7 @@ import { SnippetVault } from "@/components/features/snippet-vault";
 import { TaskBoard } from "@/components/features/task-board";
 import { SiteFooter } from "@/components/layout/footer";
 import { useCommandPalette } from "@/components/layout/command-palette";
+import { ShortcutsHelp } from "@/components/layout/shortcuts-help";
 import type { FeatureKey } from "@/lib/features";
 
 export default function Home() {
@@ -20,6 +21,7 @@ export default function Home() {
   const select = React.useCallback((k: FeatureKey) => setActive(k), []);
 
   const { palette, openPalette } = useCommandPalette(select);
+  const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
@@ -37,11 +39,17 @@ export default function Home() {
       </div>
 
       {palette}
+      <ShortcutsHelp open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
 
       <MobileNav active={active} onSelect={select} />
 
       <div className="flex flex-1">
-        <Sidebar active={active} onSelect={select} onOpenSearch={openPalette} />
+        <Sidebar
+          active={active}
+          onSelect={select}
+          onOpenSearch={openPalette}
+          onOpenShortcuts={() => setShortcutsOpen(true)}
+        />
         <main className="flex min-w-0 flex-1 flex-col">
           <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 md:px-8 md:py-8">
             {active === "overview" && <Overview onNavigate={select} />}

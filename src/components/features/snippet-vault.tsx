@@ -17,6 +17,8 @@ import {
   FileCode2,
   Filter,
   Inbox,
+  Download,
+  Upload,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -583,6 +585,8 @@ export function SnippetVault() {
 
   const [deleteTarget, setDeleteTarget] = React.useState<Snippet | null>(null);
   const [deleting, setDeleting] = React.useState(false);
+  const [importing, setImporting] = React.useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   const loadSnippets = React.useCallback(async () => {
     setLoading(true);
@@ -605,6 +609,117 @@ export function SnippetVault() {
   React.useEffect(() => {
     void loadSnippets();
   }, [loadSnippets]);
+
+  // Export all snippets as a JSON file.
+  const handleExport = React.useCallback(() => {
+    if (snippets.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: "You don't have any snippets yet.",
+      });
+      return;
+    }
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      app: "DevForge AI",
+      count: snippets.length,
+      snippets: snippets.map(({ id, createdAt, updatedAt, ...rest }) => ({
+        ...rest,
+        // strip internal fields
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {
+      type: "application/json",
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `devforge-snippets-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: "Exported",
+      description: `${snippets.length} snippet${snippets.length === 1 ? "" : "s"} downloaded.`,
+    });
+  }, [snippets, toast]);
+
+  // Import snippets from a JSON file.
+  const handleImport = React.useCallback(
+    async (file: File) => {
+      setImporting(true);
+      try {
+        const text = await file.text();
+        const parsed = JSON.parse(text) as {
+          snippets?: Array<{
+            title?: string;
+            language?: string;
+            code?: string;
+            description?: string;
+            tags?: string;
+            favorite?: boolean;
+          }>;
+        };
+        const incoming = Array.isArray(parsed.snippets) ? parsed.snippets : [];
+        if (incoming.length === 0) {
+          throw new Error("No snippets found in the file.");
+        }
+        let ok = 0;
+        let fail = 0;
+        for (const s of incoming) {
+          if (!s.title || !s.code) {
+            fail++;
+            continue;
+          }
+          try {
+            const res = await fetch("/api/snippets", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                title: s.title,
+                code: s.code,
+                language: s.language || "text",
+                description: s.description || "",
+                tags: s.tags || "",
+                favorite: !!s.favorite,
+              }),
+            });
+            if (res.ok) ok++;
+            else fail++;
+          } catch {
+            fail++;
+          }
+        }
+        await loadSnippets();
+        toast({
+          title: "Import complete",
+          description: `${ok} imported${fail > 0 ? `, ${fail} skipped` : ""}.`,
+        });
+      } catch (err) {
+        toast({
+          title: "Import failed",
+          description:
+            err instanceof Error
+              ? err.message
+              : "Invalid JSON file.",
+          variant: "destructive",
+        });
+      } finally {
+        setImporting(false);
+      }
+    },
+    [loadSnippets, toast],
+  );
+
+  const onFileChange = React.useCallback(
+    (e: React.ChangeEvent<HTMLInputElement>) => {
+      const f = e.target.files?.[0];
+      if (f) void handleImport(f);
+      e.target.value = ""; // reset so same file can be re-imported
+    },
+    [handleImport],
+  );
 
   const filtered = React.useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -743,10 +858,51 @@ export function SnippetVault() {
             )}
           </Badge>
         </div>
-        <Button onClick={openCreate} className="self-start sm:self-auto">
-          <Plus className="size-4" />
-          New snippet
-        </Button>
+        <div className="flex items-center gap-2 self-start sm:self-auto">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={onFileChange}
+            className="hidden"
+          />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={importing}
+                aria-label="Import snippets"
+              >
+                {importing ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Upload className="size-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Import from JSON</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleExport}
+                disabled={snippets.length === 0}
+                aria-label="Export snippets"
+              >
+                <Download className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Export all as JSON</TooltipContent>
+          </Tooltip>
+          <Button onClick={openCreate}>
+            <Plus className="size-4" />
+            New snippet
+          </Button>
+        </div>
       </div>
 
       {/* Toolbar */}

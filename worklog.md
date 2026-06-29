@@ -409,3 +409,83 @@ Task: QA assessment + add Command Palette, Image lightbox, Activity feed, stylin
   4. Generate a test image to verify lightbox E2E.
   5. Add a global "keyboard shortcuts" help dialog (press `?` to show all shortcuts).
   6. Consider adding a settings/preferences persistence layer (localStorage).
+
+---
+Task ID: cron-r2
+Agent: web-dev-reviewer (cron cycle 2)
+Task: QA assessment + Snippet import/export, Keyboard shortcuts help, Chat session switching, styling polish
+
+## Current Project Status Description / Assessment
+- Project "DevForge AI" stable from cron cycle 1 (8 modules + Command Palette + Image lightbox + Activity feed + footer clock).
+- Both services confirmed running: Next.js dev (port 3000) + task-service socket.io (port 3003).
+- QA via agent-browser: navigated all 8 modules → 0 console errors, 0 page errors.
+- Dev log: 0 backend errors, all API calls 200 (including /api/activity, /api/images, /api/snippets).
+- Lint: 0 errors.
+- Core Web Vitals: TTFB 65ms, LCP 716ms, CLS 0, hydration 139ms (367 components).
+- Verdict: project stable → proceeded to add 3 new features per cycle-1 recommendations.
+
+## Current Goals / Completed Modifications / Verification Results
+
+### 1. Snippet Import/Export (JSON) — NEW FEATURE
+- Added import/export capability to `src/components/features/snippet-vault.tsx`:
+  - **Export**: downloads all snippets as a timestamped JSON file (`devforge-snippets-YYYY-MM-DD.json`). Strips internal DB fields (id, createdAt, updatedAt). Disabled when no snippets exist. Shows toast with count.
+  - **Import**: hidden file input (`accept="application/json"`) triggered by an Upload icon button. Parses JSON, iterates `snippets[]` array, POSTs each to `/api/snippets` with validation. Reports `${ok} imported, ${fail} skipped` toast. Refreshes the list on completion. Robust error handling for invalid JSON / missing fields.
+  - Added `Upload` and `Download` lucide icons + TooltipProvider-wrapped icon buttons with loading spinner during import.
+  - New state: `importing`, `fileInputRef`.
+  - Reuses existing POST /api/snippets endpoint — no new API needed.
+
+### 2. Keyboard Shortcuts Help Dialog (press `?`) — NEW FEATURE
+- Created `src/components/layout/shortcuts-help.tsx`:
+  - Full-screen modal with framer-motion enter/exit animations.
+  - Three groups: **Global** (⌘K palette, ? help, 1-8 module jumps), **Image Studio** (⌘↵ generate, ←/→ lightbox nav, X close), **AI Chat** (↵ send, ⇧↵ newline).
+  - Styled `<Kbd>` component for keyboard key chips.
+  - Controlled/openable externally via `open`/`onOpenChange` props (for sidebar button trigger).
+  - Press `?` toggles when not typing in an input; `Esc` closes.
+- Integrated into `src/app/page.tsx`: `shortcutsOpen` state passed to both `<ShortcutsHelp>` and `<Sidebar onOpenShortcuts>`.
+- Added "Shortcuts" button (with `?` kbd hint) to `src/components/layout/sidebar.tsx` footer.
+- **Bug fixed**: `Escape` is not a valid lucide-react export → replaced with `X` icon in the Kbd chips (the Esc key handler still uses the string "Escape").
+
+### 3. Chat Session Switching (multiple conversations) — NEW FEATURE
+- Created `src/app/api/chat/sessions/route.ts` (GET, force-dynamic):
+  - Uses Prisma `groupBy` on `ChatMessage.session` to get distinct sessions + message counts + last activity.
+  - For each session, fetches the first user message (as title) and last user message (as preview).
+  - Returns `{ sessions: [{id, title, preview, messageCount, lastActivity}] }` sorted by last activity desc.
+- Reworked `src/components/features/chat-panel.tsx`:
+  - Replaced hardcoded `SESSION = "default"` with `sessionId` state (persisted to localStorage via `devforge-chat-active-v1`).
+  - History reloads when session changes (effect dependency on `sessionId`).
+  - **New conversation**: generates a fresh session id (`s-{timestamp}-{rand}`), clears messages, closes drawer.
+  - **History drawer**: right-side slide-in panel (framer-motion spring animation) showing all saved sessions with title, preview, message count, last activity date. Active session highlighted. Click to switch; hover to reveal delete (trash) button.
+  - **Delete session**: AlertDialog confirmation → DELETE `/api/chat/clear?session=` → refreshes session list; if active session deleted, falls back to "default".
+  - Header now has "New" (Plus) and "History" (History icon) buttons with tooltips, alongside existing "Clear".
+  - After sending a message, `loadSessions()` is called in background to keep the list fresh.
+  - Session list auto-loads on mount.
+
+### 4. Styling Polish
+- Snippet toolbar: icon buttons with tooltips for import/export, consistent with existing design language.
+- Chat header: 3 action buttons (New / History / Clear) with tooltips and responsive hidden labels on mobile.
+- Chat history drawer: gradient header, spring animation, hover-reveal delete, active-session highlight.
+- Shortcuts dialog: gradient header, grouped sections with hover-highlighted rows, footer hint.
+
+### Verification Results
+- `bun run lint` → 0 errors, 0 warnings.
+- **Bug found & fixed during QA**: `lucide-react` has no `Escape` export → caused a 500 SSR error. Replaced with `X` icon. Verified page returns 200 after fix.
+- agent-browser E2E:
+  - Overview: 0 errors, vitals good (LCP 716ms, CLS 0).
+  - Snippets: Import + Export buttons present; Export correctly disabled when empty.
+  - AI Chat: New + History buttons present; History drawer opens, shows "1 saved" conversation ("Say hello in one short sentence." · 2 msgs · 6/29/2026); delete confirmation works.
+  - Shortcuts dialog: opens via sidebar button, shows Global/Image Studio/AI Chat groups.
+  - 0 page errors across all interactions.
+- Dev log: GET /api/chat/sessions 200 (×2), GET /api/activity 200 (×3), GET /api/snippets 200 — all new endpoints healthy.
+- task-service: ALIVE on port 3003.
+
+## Unresolved Issues / Risks / Next-Phase Priority Recommendations
+- **agent-browser `press Escape`**: sometimes doesn't dismiss framer-motion dialogs reliably (synthetic event limitation); the visible Close buttons work. No real bug.
+- **Chat session title**: currently derived from the first user message (truncated 60 chars). Could add explicit rename in a future cycle.
+- **Lightbox still not E2E-tested with real images**: gallery remained empty this cycle. Recommend generating a test image next cycle.
+- **Next-phase priorities (for cron cycle 3)**:
+  1. Add drag-and-drop for Task Board cards (currently dropdown-only to move between columns) — highest-value UX gap.
+  2. Add chat session rename (inline edit of conversation title).
+  3. Generate a test image to verify the lightbox feature end-to-end.
+  4. Add a "copy to clipboard" button on code blocks in AI Chat markdown responses.
+  5. Add snippet duplicate (clone) action.
+  6. Add a global loading bar (NProgress-style) for async navigations.

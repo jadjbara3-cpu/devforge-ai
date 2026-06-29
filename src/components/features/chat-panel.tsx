@@ -13,6 +13,10 @@ import {
   Trash2,
   User as UserIcon,
   Zap,
+  Plus,
+  MessageSquare,
+  ChevronLeft,
+  History,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -22,6 +26,22 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 type Role = "user" | "assistant" | "system";
 
@@ -32,7 +52,16 @@ type ChatMessage = {
   createdAt: string;
 };
 
-const SESSION = "default";
+interface ChatSession {
+  id: string;
+  title: string;
+  preview: string;
+  messageCount: number;
+  lastActivity: string;
+}
+
+const SESSIONS_STORAGE_KEY = "devforge-chat-sessions-v1";
+const ACTIVE_SESSION_KEY = "devforge-chat-active-v1";
 
 const SUGGESTIONS: { icon: React.ElementType; label: string }[] = [
   { icon: Code2, label: "Explain async/await in TypeScript with an example." },
@@ -42,6 +71,14 @@ const SUGGESTIONS: { icon: React.ElementType; label: string }[] = [
 
 export function ChatPanel() {
   const { toast } = useToast();
+  const [sessionId, setSessionId] = React.useState<string>("default");
+  const [sessions, setSessions] = React.useState<ChatSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = React.useState(true);
+  const [showSessions, setShowSessions] = React.useState(false);
+  const [deleteSessionTarget, setDeleteSessionTarget] =
+    React.useState<string | null>(null);
+  const [deletingSession, setDeletingSession] = React.useState(false);
+
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [sending, setSending] = React.useState(false);
@@ -51,13 +88,52 @@ export function ChatPanel() {
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
-  // Load conversation history on mount.
+  // Load the active session id from localStorage on mount.
+  React.useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (saved) setSessionId(saved);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  // Persist active session id.
+  React.useEffect(() => {
+    try {
+      localStorage.setItem(ACTIVE_SESSION_KEY, sessionId);
+    } catch {
+      /* ignore */
+    }
+  }, [sessionId]);
+
+  // Load session list.
+  const loadSessions = React.useCallback(async () => {
+    setSessionsLoading(true);
+    try {
+      const res = await fetch("/api/chat/sessions", { cache: "no-store" });
+      const data = (await res.json()) as { sessions?: ChatSession[] };
+      setSessions(data.sessions ?? []);
+    } catch {
+      setSessions([]);
+    } finally {
+      setSessionsLoading(false);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    void loadSessions();
+  }, [loadSessions]);
+
+  // Load conversation history when session changes.
   React.useEffect(() => {
     let cancelled = false;
+    setHistoryLoading(true);
+    setMessages([]);
     (async () => {
       try {
         const res = await fetch(
-          `/api/chat/history?session=${encodeURIComponent(SESSION)}`,
+          `/api/chat/history?session=${encodeURIComponent(sessionId)}`,
           { cache: "no-store" }
         );
         if (!res.ok) throw new Error("Failed to load chat history");
@@ -81,7 +157,7 @@ export function ChatPanel() {
     return () => {
       cancelled = true;
     };
-  }, [toast]);
+  }, [sessionId, toast]);
 
   // Auto-scroll to the latest message whenever the list or sending state changes.
   React.useEffect(() => {
@@ -89,6 +165,51 @@ export function ChatPanel() {
     if (!el) return;
     el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  const newSession = React.useCallback(() => {
+    const id = `s-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    setSessionId(id);
+    setMessages([]);
+    setHistoryLoading(false);
+    setShowSessions(false);
+  }, []);
+
+  const switchSession = React.useCallback((id: string) => {
+    setSessionId(id);
+    setShowSessions(false);
+  }, []);
+
+  const deleteSession = React.useCallback(
+    async (id: string) => {
+      setDeletingSession(true);
+      try {
+        await fetch(`/api/chat/clear?session=${encodeURIComponent(id)}`, {
+          method: "DELETE",
+        });
+        // Refresh session list
+        await loadSessions();
+        // If we deleted the active session, switch to default or create new
+        if (id === sessionId) {
+          setSessionId("default");
+        }
+        toast({
+          title: "Conversation deleted",
+          description: "The session has been removed.",
+        });
+      } catch (err) {
+        toast({
+          title: "Couldn't delete session",
+          description:
+            err instanceof Error ? err.message : "Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setDeletingSession(false);
+        setDeleteSessionTarget(null);
+      }
+    },
+    [sessionId, loadSessions, toast]
+  );
 
   const send = React.useCallback(
     async (override?: string) => {
@@ -111,7 +232,7 @@ export function ChatPanel() {
         const res = await fetch("/api/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: content, session: SESSION }),
+          body: JSON.stringify({ message: content, session: sessionId }),
         });
         const data = (await res.json().catch(() => ({}))) as {
           reply?: string;
@@ -130,8 +251,9 @@ export function ChatPanel() {
             createdAt: new Date().toISOString(),
           },
         ]);
+        // Refresh session list in background (new session may have been created)
+        void loadSessions();
       } catch (err) {
-        // Roll back the optimistic user bubble so the user can retry cleanly.
         setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
         toast({
           title: "Chat error",
@@ -144,7 +266,7 @@ export function ChatPanel() {
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
     },
-    [input, sending, toast]
+    [input, sending, sessionId, toast, loadSessions]
   );
 
   const clearChat = async () => {
@@ -152,11 +274,12 @@ export function ChatPanel() {
     setClearing(true);
     try {
       const res = await fetch(
-        `/api/chat/clear?session=${encodeURIComponent(SESSION)}`,
+        `/api/chat/clear?session=${encodeURIComponent(sessionId)}`,
         { method: "DELETE" }
       );
       if (!res.ok) throw new Error("Failed to clear chat");
       setMessages([]);
+      void loadSessions();
       toast({
         title: "Conversation cleared",
         description: "Ready for a fresh start.",
@@ -217,6 +340,41 @@ export function ChatPanel() {
             <Badge variant="secondary" className="hidden sm:inline-flex">
               {messageCount} {messageCount === 1 ? "message" : "messages"}
             </Badge>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={newSession}
+                    className="gap-1.5"
+                    aria-label="New conversation"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">New</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Start a new conversation</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      void loadSessions();
+                      setShowSessions(true);
+                    }}
+                    className="gap-1.5"
+                    aria-label="Conversation history"
+                  >
+                    <History className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">History</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View past conversations</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <Button
               variant="outline"
               size="sm"
@@ -297,6 +455,161 @@ export function ChatPanel() {
           </p>
         </div>
       </Card>
+
+      {/* Sessions history drawer */}
+      <AnimatePresence>
+        {showSessions && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
+            onClick={() => setShowSessions(false)}
+          >
+            <motion.div
+              initial={{ x: "100%" }}
+              animate={{ x: 0 }}
+              exit={{ x: "100%" }}
+              transition={{ type: "spring", stiffness: 320, damping: 34 }}
+              className="absolute right-0 top-0 flex h-full w-full max-w-sm flex-col border-l bg-card shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b bg-gradient-to-r from-primary/10 to-transparent px-4 py-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/15 text-primary">
+                    <History className="h-4.5 w-4.5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-semibold">Conversations</h3>
+                    <p className="text-[11px] text-muted-foreground">
+                      {sessions.length} saved
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowSessions(false)}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  aria-label="Close"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto scrollbar-thin p-3">
+                <Button
+                  onClick={newSession}
+                  variant="outline"
+                  className="mb-3 w-full justify-center gap-1.5"
+                >
+                  <Plus className="h-4 w-4" /> New conversation
+                </Button>
+
+                {sessionsLoading ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
+                    <Loader2 className="h-5 w-5 animate-spin" />
+                    <p className="text-xs">Loading…</p>
+                  </div>
+                ) : sessions.length === 0 ? (
+                  <div className="flex flex-col items-center gap-2 py-10 text-center text-muted-foreground">
+                    <MessageSquare className="h-8 w-8 opacity-40" />
+                    <p className="text-xs">No conversations yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1.5">
+                    {sessions.map((s) => {
+                      const isActive = s.id === sessionId;
+                      return (
+                        <div
+                          key={s.id}
+                          className={cn(
+                            "group relative flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer",
+                            isActive
+                              ? "border-primary/40 bg-primary/5"
+                              : "border-border hover:bg-accent/50"
+                          )}
+                          onClick={() => switchSession(s.id)}
+                        >
+                          <div
+                            className={cn(
+                              "mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+                              isActive
+                                ? "bg-primary/15 text-primary"
+                                : "bg-muted text-muted-foreground"
+                            )}
+                          >
+                            <MessageSquare className="h-3.5 w-3.5" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-xs font-medium">
+                              {s.title}
+                            </p>
+                            <p className="truncate text-[10px] text-muted-foreground">
+                              {s.preview || "No messages"}
+                            </p>
+                            <div className="mt-1 flex items-center gap-2 text-[9px] text-muted-foreground/70">
+                              <span>{s.messageCount} msgs</span>
+                              <span>·</span>
+                              <span>
+                                {new Date(s.lastActivity).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setDeleteSessionTarget(s.id);
+                            }}
+                            className="opacity-0 transition-opacity group-hover:opacity-100"
+                            aria-label="Delete conversation"
+                          >
+                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Delete session confirmation */}
+      <AlertDialog
+        open={!!deleteSessionTarget}
+        onOpenChange={(v) => !v && setDeleteSessionTarget(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove all messages in this conversation.
+              This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deletingSession}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                deleteSessionTarget && void deleteSession(deleteSessionTarget)
+              }
+              disabled={deletingSession}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deletingSession ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

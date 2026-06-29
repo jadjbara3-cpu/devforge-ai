@@ -25,6 +25,7 @@ import {
   Zap,
   Search,
   Command,
+  Keyboard,
 } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
 
@@ -48,10 +49,12 @@ export function Sidebar({
   active,
   onSelect,
   onOpenSearch,
+  onOpenShortcuts,
 }: {
   active: FeatureKey;
   onSelect: (k: FeatureKey) => void;
   onOpenSearch?: () => void;
+  onOpenShortcuts?: () => void;
 }) {
   return (
     <aside className="hidden md:flex md:w-[248px] md:flex-col md:shrink-0 border-r bg-sidebar/60 glass">
@@ -146,11 +149,27 @@ export function Sidebar({
           </div>
           <ThemeToggle />
         </div>
+        <div className="mt-2 flex items-center gap-2">
+          {onOpenShortcuts && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onOpenShortcuts}
+              className="flex-1 justify-start text-xs text-muted-foreground"
+            >
+              <Keyboard className="mr-1.5 h-3.5 w-3.5" />
+              Shortcuts
+              <kbd className="ml-auto rounded border bg-muted px-1 py-0.5 font-mono text-[9px]">
+                ?
+              </kbd>
+            </Button>
+          )}
+        </div>
         <Button
           asChild
           variant="ghost"
           size="sm"
-          className="mt-2 w-full justify-start text-xs text-muted-foreground"
+          className="mt-1 w-full justify-start text-xs text-muted-foreground"
         >
           <Link href="#" onClick={(e) => e.preventDefault()}>
             <Github className="mr-2 h-3.5 w-3.5" /> v1.0 · Built with Next.js 16
