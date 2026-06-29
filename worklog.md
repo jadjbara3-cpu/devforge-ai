@@ -641,3 +641,72 @@ Task: QA + generate test image (verify lightbox) + Snippet duplicate, Chat Markd
   4. Add a "copy prompt" button on generated images in Image Studio (to reuse a prompt).
   5. Add Web Intel search history (recent searches dropdown).
   6. Add a settings panel (default TTS voice, default image size, theme preference persistence).
+
+---
+Task ID: cron-r5
+Agent: web-dev-reviewer (cron cycle 5)
+Task: QA + Regenerate response, Copy-prompt on images, Snippet tag-chip filters
+
+## Current Project Status Description / Assessment
+- Project "DevForge AI" stable from cron cycle 4 (8 modules + 11+ enhancement features).
+- Both services confirmed running: Next.js dev (port 3000) + task-service socket.io (port 3003).
+- QA via agent-browser: all 8 modules navigated → 0 console errors, 0 page errors.
+- Dev log: 0 backend errors, all API calls 200.
+- Lint: 0 errors.
+- Verdict: project stable → proceeded to add 3 new features per cycle-4 recommendations.
+
+## Current Goals / Completed Modifications / Verification Results
+
+### 1. Regenerate Response Button — NEW FEATURE
+- Added to `src/components/features/chat-panel.tsx`:
+  - New `regenerateLast()` function: finds the last user message, removes any assistant messages after it, re-POSTs to `/api/chat`, appends the new assistant response. Uses `findLastIndex` (ES2023) to locate the last user message. Includes `regenerating` state + loading bar integration.
+  - New `regenerating` state; shows a TypingBubble during regeneration.
+  - Added `RotateCcw` lucide icon import.
+  - Updated `MessageBubble` to accept `isLastAssistant`, `canRegenerate`, `onRegenerate`, `regenerating` props. Restructured the bubble to use a flex-col wrapper so the regenerate button sits below the message.
+  - The regenerate button (with RotateCcw icon that spins -180° on hover) appears only on the last assistant message when not sending/regenerating. Label toggles "Regenerate" / "Regenerating…".
+  - Messages map now passes `idx` to compute `isLastAssistant` (last message, role assistant, not sending).
+- Verified: switched to 6-message session → "Regenerate response" button appeared on last assistant msg → clicked → `POST /api/chat 200 in 823ms` → new response generated → button re-appeared on the new last message.
+
+### 2. Copy-Prompt on Generated Images — NEW FEATURE
+- Added to `src/components/features/image-studio.tsx`:
+  - New `handleCopyPrompt(prompt)` function: sets the prompt input to the image's prompt, shows toast "Prompt copied · The prompt is loaded in the editor — tweak & regenerate.", focuses the prompt textarea.
+  - Added `ClipboardCopy` lucide icon import.
+  - Added `onCopyPrompt` prop to `GalleryGridProps` and the `GalleryGrid` function.
+  - Added a "Copy prompt" button (ClipboardCopy icon, tooltip "Copy prompt to reuse") in the image card overlay, before the Download button. Uses `stopPropagation` to not trigger the lightbox.
+  - Wired `onCopyPrompt={handleCopyPrompt}` in the GalleryGrid render.
+- Verified: navigated to Image Studio → gallery image present → clicked Copy prompt → prompt input filled with "A serene Japanese zen garden with cherry blossoms, koi pond, golden hour, ultra detailed" → ready to tweak & regenerate.
+
+### 3. Snippet Tag-Chip Clickable Filters — NEW FEATURE
+- Added to `src/components/features/snippet-vault.tsx`:
+  - New `activeTag` state + `handleTagClick(tag)` callback (toggles the tag filter).
+  - New `allTags` memo: collects all unique tags across snippets, sorted alphabetically.
+  - Updated `filtered` memo to also filter by `activeTag` (uses `parseTags(s.tags).includes(activeTag)`).
+  - Added `onTagClick` and `activeTag` props to `SnippetCardProps`. Tag badges on cards are now clickable (cursor-pointer, hover border-primary, active state with primary bg). Clicking a card tag also toggles the filter. Uses `stopPropagation` to not trigger card click.
+  - Added a tag-chip filter bar below the toolbar: "TAGS:" label + clickable pill chips for each unique tag. Active tag highlighted with primary border/bg. "Clear" button appears when a tag is active.
+- Verified: navigated to Snippets → tag bar showed "TAGS:" + "demo" + "test" chips → clicked "demo" → filtered to 2 snippets with that tag → "Clear" button appeared → clicked Clear → all snippets returned.
+
+### 4. Styling Polish
+- Regenerate button: RotateCcw icon spins -180° on hover (group-hover/regen), subtle text, hover bg-accent/text-primary.
+- Image card overlay: new Copy prompt button with consistent backdrop-blur styling alongside Download/Delete.
+- Tag chips: rounded-full pills with active (primary) / inactive (border) / hover (border-primary/40) states. Card tag badges match the filter bar styling.
+
+### Verification Results
+- `bun run lint` → 0 errors, 0 warnings.
+- agent-browser E2E:
+  - All 8 modules: 0 page errors.
+  - **Regenerate**: switched to 6-msg session → Regenerate button on last assistant msg → clicked → `POST /api/chat 200` → new response ✓.
+  - **Copy-prompt**: Image Studio gallery → Copy prompt button → prompt loaded in editor ✓.
+  - **Tag chips**: Snippets → "demo" chip → filtered to 2 snippets → Clear → all returned ✓.
+  - 0 page errors across all interactions.
+- Dev log: POST /api/chat 200 (regeneration), GET /api/chat/sessions 200, GET /api/images 200, GET /api/snippets 200, GET /api/activity 200 — all healthy.
+- task-service: ALIVE on port 3003.
+
+## Unresolved Issues / Risks / Next-Phase Priority Recommendations
+- **agent-browser tooltip interference**: the Copy prompt button was covered by its tooltip during direct click attempts; worked via eval-triggered click. No real bug — tooltips auto-dismiss on interaction in a real browser.
+- **Next-phase priorities (for cron cycle 6)**:
+  1. Add task card inline editing (edit title/description/priority directly on the card — carried forward from cycle 4).
+  2. Add Web Intel search history (recent searches dropdown).
+  3. Add a settings panel (default TTS voice, default image size, theme preference persistence).
+  4. Add a "copy message" button on individual chat messages (copy raw text).
+  5. Add image gallery filter by size/orientation.
+  6. Add a snippet "language stats" mini-chart on the Snippet Vault header.

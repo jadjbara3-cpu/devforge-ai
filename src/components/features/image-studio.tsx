@@ -14,6 +14,7 @@ import {
   Square,
   RectangleVertical,
   RectangleHorizontal,
+  ClipboardCopy,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -229,6 +230,20 @@ export function ImageStudio() {
     [toast],
   );
 
+  const handleCopyPrompt = React.useCallback(
+    (prompt: string) => {
+      setPrompt(prompt);
+      toast({
+        title: "Prompt copied",
+        description: "The prompt is loaded in the editor — tweak & regenerate.",
+      });
+      requestAnimationFrame(() => {
+        document.getElementById("image-prompt")?.focus();
+      });
+    },
+    [toast]
+  );
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
@@ -416,6 +431,7 @@ export function ImageStudio() {
               deletingId={deletingId}
               onDelete={handleDelete}
               onOpenLightbox={(idx) => setLightboxIndex(idx)}
+              onCopyPrompt={handleCopyPrompt}
             />
           </CardContent>
         </Card>
@@ -449,6 +465,7 @@ interface GalleryGridProps {
   deletingId: string | null;
   onDelete: (id: string) => void;
   onOpenLightbox: (index: number) => void;
+  onCopyPrompt: (prompt: string) => void;
 }
 
 function GalleryGrid({
@@ -458,6 +475,7 @@ function GalleryGrid({
   deletingId,
   onDelete,
   onOpenLightbox,
+  onCopyPrompt,
 }: GalleryGridProps) {
   // Initial skeleton state (no images yet, still loading).
   if (loading && images.length === 0) {
@@ -531,6 +549,22 @@ function GalleryGrid({
             <div className="absolute inset-0 flex flex-col justify-between bg-gradient-to-t from-black/80 via-black/10 to-transparent opacity-0 transition-opacity duration-200 group-hover:opacity-100">
               {/* Top-right actions */}
               <div className="flex items-center justify-end gap-1.5 p-2">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onCopyPrompt(img.prompt);
+                      }}
+                      className="inline-flex size-8 items-center justify-center rounded-md bg-background/80 text-foreground backdrop-blur transition-colors hover:bg-background hover:text-primary"
+                      aria-label="Copy prompt"
+                    >
+                      <ClipboardCopy className="size-4" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom">Copy prompt to reuse</TooltipContent>
+                </Tooltip>
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <a

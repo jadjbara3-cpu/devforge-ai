@@ -22,6 +22,7 @@ import {
   Pencil,
   X,
   Download,
+  RotateCcw,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -406,6 +407,66 @@ export function ChatPanel() {
     });
   };
 
+  const [regenerating, setRegenerating] = React.useState(false);
+
+  const regenerateLast = React.useCallback(async () => {
+    if (sending || regenerating) return;
+    // Find the last user message
+    const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === "user");
+    if (lastUserIdx === -1) return;
+    const lastUser = messages[messages.length - 1 - lastUserIdx];
+    if (!lastUser) return;
+
+    // Remove the last assistant message (if it exists after the last user msg)
+    setMessages((prev) => {
+      const slice = [...prev];
+      // Find index of last user message
+      const uIdx = slice.findLastIndex((m) => m.role === "user");
+      // Remove any assistant messages after it
+      while (slice.length - 1 > uIdx) {
+        slice.pop();
+      }
+      return slice;
+    });
+
+    setRegenerating(true);
+    startLoading();
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: lastUser.content, session: sessionId }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        reply?: string;
+        id?: string;
+        error?: string;
+      };
+      if (!res.ok || !data.reply) {
+        throw new Error(data.error || "Failed to regenerate response.");
+      }
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: data.id || `a-${Date.now()}`,
+          role: "assistant",
+          content: data.reply,
+          createdAt: new Date().toISOString(),
+        },
+      ]);
+    } catch (err) {
+      toast({
+        title: "Regenerate failed",
+        description:
+          err instanceof Error ? err.message : "Something went wrong.",
+        variant: "destructive",
+      });
+    } finally {
+      setRegenerating(false);
+      stopLoading();
+    }
+  }, [messages, sending, regenerating, sessionId, toast, startLoading, stopLoading]);
+
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
@@ -541,11 +602,25 @@ export function ChatPanel() {
           ) : (
             <div className="flex flex-col gap-4">
               <AnimatePresence initial={false}>
-                {messages.map((m) => (
-                  <MessageBubble key={m.id} message={m} />
-                ))}
+                {messages.map((m, idx) => {
+                  const isLastAssistant =
+                    m.role === "assistant" &&
+                    idx === messages.length - 1 &&
+                    !sending;
+                  return (
+                    <MessageBubble
+                      key={m.id}
+                      message={m}
+                      isLastAssistant={isLastAssistant}
+                      canRegenerate={isLastAssistant && !regenerating && !sending}
+                      onRegenerate={() => void regenerateLast()}
+                      regenerating={regenerating && isLastAssistant}
+                    />
+                  );
+                })}
               </AnimatePresence>
               {sending && <TypingBubble />}
+              {regenerating && !sending && <TypingBubble />}
             </div>
           )}
         </div>
@@ -809,7 +884,19 @@ export function ChatPanel() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({
+  message,
+  isLastAssistant,
+  canRegenerate,
+  onRegenerate,
+  regenerating,
+}: {
+  message: ChatMessage;
+  isLastAssistant?: boolean;
+  canRegenerate?: boolean;
+  onRegenerate?: () => void;
+  regenerating?: boolean;
+}) {
   const isUser = message.role === "user";
   return (
     <motion.div
@@ -830,18 +917,31 @@ function MessageBubble({ message }: { message: ChatMessage }) {
           </AvatarFallback>
         </Avatar>
       )}
-      <div
-        className={cn(
-          "max-w-[85%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed md:max-w-[78%]",
-          isUser
-            ? "rounded-br-sm bg-primary text-primary-foreground shadow-sm"
-            : "rounded-bl-sm border border-border/60 bg-muted/60 text-foreground"
-        )}
-      >
-        {isUser ? (
-          <p className="whitespace-pre-wrap break-words">{message.content}</p>
-        ) : (
-          <MarkdownContent content={message.content} />
+      <div className="flex max-w-[85%] flex-col gap-1.5 md:max-w-[78%]">
+        <div
+          className={cn(
+            "rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+            isUser
+              ? "rounded-br-sm bg-primary text-primary-foreground shadow-sm"
+              : "rounded-bl-sm border border-border/60 bg-muted/60 text-foreground"
+          )}
+        >
+          {isUser ? (
+            <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          ) : (
+            <MarkdownContent content={message.content} />
+          )}
+        </div>
+        {canRegenerate && (
+          <button
+            onClick={onRegenerate}
+            disabled={regenerating}
+            className="group/regen flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            aria-label="Regenerate response"
+          >
+            <RotateCcw className="h-3 w-3 transition-transform group-hover/regen:-rotate-180" />
+            {regenerating ? "Regenerating…" : "Regenerate"}
+          </button>
         )}
       </div>
       {isUser && (

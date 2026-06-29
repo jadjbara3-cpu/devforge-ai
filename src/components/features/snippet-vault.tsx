@@ -197,6 +197,8 @@ interface SnippetCardProps {
   onDuplicate: () => void;
   onDelete: () => void;
   onToggleFavorite: () => void;
+  onTagClick?: (tag: string) => void;
+  activeTag?: string | null;
 }
 
 function SnippetCard({
@@ -206,6 +208,8 @@ function SnippetCard({
   onDuplicate,
   onDelete,
   onToggleFavorite,
+  onTagClick,
+  activeTag,
 }: SnippetCardProps) {
   const tags = parseTags(snippet.tags);
 
@@ -232,11 +236,26 @@ function SnippetCard({
                 >
                   {snippet.language}
                 </Badge>
-                {tags.map((t) => (
-                  <Badge key={t} variant="outline" className="text-[11px]">
-                    {t}
-                  </Badge>
-                ))}
+                {tags.map((t) => {
+                  const isActive = activeTag === t;
+                  return (
+                    <Badge
+                      key={t}
+                      variant="outline"
+                      className={cn(
+                        "cursor-pointer text-[11px] transition-colors",
+                        onTagClick && "hover:border-primary/50 hover:text-primary",
+                        isActive && "border-primary bg-primary/10 text-primary"
+                      )}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onTagClick?.(t);
+                      }}
+                    >
+                      {t}
+                    </Badge>
+                  );
+                })}
               </div>
             </div>
             <Tooltip>
@@ -586,6 +605,7 @@ export function SnippetVault() {
   const [search, setSearch] = React.useState("");
   const [languageFilter, setLanguageFilter] = React.useState<string>("all");
   const [favoritesOnly, setFavoritesOnly] = React.useState(false);
+  const [activeTag, setActiveTag] = React.useState<string | null>(null);
 
   const [dialogOpen, setDialogOpen] = React.useState(false);
   const [editing, setEditing] = React.useState<Snippet | null>(null);
@@ -733,6 +753,7 @@ export function SnippetVault() {
     return snippets.filter((s) => {
       if (favoritesOnly && !s.favorite) return false;
       if (languageFilter !== "all" && s.language !== languageFilter) return false;
+      if (activeTag && !parseTags(s.tags).includes(activeTag)) return false;
       if (!q) return true;
       const haystack = [
         s.title,
@@ -745,7 +766,18 @@ export function SnippetVault() {
         .toLowerCase();
       return haystack.includes(q);
     });
-  }, [snippets, search, languageFilter, favoritesOnly]);
+  }, [snippets, search, languageFilter, favoritesOnly, activeTag]);
+
+  // Collect all unique tags for the tag filter chips
+  const allTags = React.useMemo(() => {
+    const set = new Set<string>();
+    snippets.forEach((s) => parseTags(s.tags).forEach((t) => set.add(t)));
+    return Array.from(set).sort();
+  }, [snippets]);
+
+  const handleTagClick = React.useCallback((tag: string) => {
+    setActiveTag((prev) => (prev === tag ? null : tag));
+  }, []);
 
   const favoritesCount = React.useMemo(
     () => snippets.filter((s) => s.favorite).length,
@@ -978,6 +1010,40 @@ export function SnippetVault() {
         </Button>
       </div>
 
+      {/* Tag filter chips */}
+      {allTags.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            Tags:
+          </span>
+          {allTags.map((t) => {
+            const isActive = activeTag === t;
+            return (
+              <button
+                key={t}
+                onClick={() => handleTagClick(t)}
+                className={cn(
+                  "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                  isActive
+                    ? "border-primary bg-primary/10 text-primary"
+                    : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                )}
+              >
+                {t}
+              </button>
+            );
+          })}
+          {activeTag && (
+            <button
+              onClick={() => setActiveTag(null)}
+              className="rounded-full border border-transparent px-2 py-0.5 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Content */}
       {loading ? (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
@@ -1003,6 +1069,8 @@ export function SnippetVault() {
                 onDuplicate={() => duplicateSnippet(snip)}
                 onDelete={() => setDeleteTarget(snip)}
                 onToggleFavorite={() => toggleFavorite(snip)}
+                onTagClick={handleTagClick}
+                activeTag={activeTag}
               />
             ))}
           </AnimatePresence>
