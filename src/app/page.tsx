@@ -1,0 +1,56 @@
+"use client";
+
+import * as React from "react";
+import { Sidebar, MobileNav } from "@/components/layout/sidebar";
+import { FEATURES, type FeatureKey } from "@/lib/features";
+import { Overview } from "@/components/features/overview";
+import { ChatPanel } from "@/components/features/chat-panel";
+import { ImageStudio } from "@/components/features/image-studio";
+import { VisionLab } from "@/components/features/vision-lab";
+import { VoiceLab } from "@/components/features/voice-lab";
+import { WebIntel } from "@/components/features/web-intel";
+import { SnippetVault } from "@/components/features/snippet-vault";
+import { TaskBoard } from "@/components/features/task-board";
+import { SiteFooter } from "@/components/layout/footer";
+
+export default function Home() {
+  const [active, setActive] = React.useState<FeatureKey>("overview");
+
+  const select = React.useCallback((k: FeatureKey) => setActive(k), []);
+
+  return (
+    <div className="relative flex min-h-screen flex-col bg-background">
+      {/* ambient background */}
+      <div className="pointer-events-none fixed inset-0 -z-10 overflow-hidden">
+        <div className="absolute -left-40 -top-40 h-[28rem] w-[28rem] rounded-full bg-primary/10 blur-3xl aurora-blob" />
+        <div
+          className="absolute -right-40 top-1/3 h-[24rem] w-[24rem] rounded-full bg-chart-2/10 blur-3xl aurora-blob"
+          style={{ animationDelay: "3s" }}
+        />
+        <div
+          className="absolute bottom-0 left-1/3 h-[22rem] w-[22rem] rounded-full bg-chart-4/10 blur-3xl aurora-blob"
+          style={{ animationDelay: "6s" }}
+        />
+      </div>
+
+      <MobileNav active={active} onSelect={select} />
+
+      <div className="flex flex-1">
+        <Sidebar active={active} onSelect={select} />
+        <main className="flex min-w-0 flex-1 flex-col">
+          <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col px-4 py-6 md:px-8 md:py-8">
+            {active === "overview" && <Overview onNavigate={select} />}
+            {active === "chat" && <ChatPanel />}
+            {active === "image" && <ImageStudio />}
+            {active === "vision" && <VisionLab />}
+            {active === "voice" && <VoiceLab />}
+            {active === "web" && <WebIntel />}
+            {active === "snippets" && <SnippetVault />}
+            {active === "board" && <TaskBoard />}
+          </div>
+          <SiteFooter />
+        </main>
+      </div>
+    </div>
+  );
+}

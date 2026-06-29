@@ -1,0 +1,80 @@
+// DevForge AI - Prisma Schema
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  name      String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Post {
+  id        String   @id @default(cuid())
+  title     String
+  content   String?
+  published Boolean  @default(false)
+  authorId  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// Code snippets manager
+model Snippet {
+  id          String   @id @default(cuid())
+  title       String
+  language    String   @default("text")
+  code        String
+  description String?
+  tags        String?  // comma separated
+  favorite    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([language])
+  @@index([favorite])
+}
+
+// AI chat conversation history
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // "user" | "assistant" | "system"
+  content   String
+  session   String   @default("default")
+  createdAt DateTime @default(now())
+
+  @@index([session, createdAt])
+}
+
+// Generated images gallery
+model GeneratedImage {
+  id        String   @id @default(cuid())
+  prompt    String
+  url       String
+  size      String   @default("1024x1024")
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
+
+// Real-time task board (persisted fallback for the websocket service)
+model BoardTask {
+  id         String   @id @default(cuid())
+  title      String
+  description String?
+  status     String   @default("todo") // todo | in-progress | done
+  priority   String   @default("medium") // low | medium | high
+  assignee   String?
+  color      String   @default("emerald")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status])
+}
