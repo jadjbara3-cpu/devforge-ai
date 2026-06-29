@@ -34,6 +34,7 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Lightbox, type LightboxItem } from "@/components/ui/lightbox";
 import {
   Tooltip,
   TooltipContent,
@@ -97,6 +98,7 @@ export function ImageStudio() {
   const [loadingGallery, setLoadingGallery] = React.useState(true);
   const [generating, setGenerating] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
+  const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
 
   // Load the existing gallery on mount.
   const loadGallery = React.useCallback(async () => {
@@ -409,10 +411,25 @@ export function ImageStudio() {
               generating={generating}
               deletingId={deletingId}
               onDelete={handleDelete}
+              onOpenLightbox={(idx) => setLightboxIndex(idx)}
             />
           </CardContent>
         </Card>
       </div>
+
+      {/* Lightbox */}
+      <Lightbox
+        items={images.map((img) => ({
+          id: img.id,
+          url: img.url,
+          prompt: img.prompt,
+          size: img.size,
+          meta: new Date(img.createdAt).toLocaleString(),
+        }))}
+        index={lightboxIndex}
+        onClose={() => setLightboxIndex(null)}
+        onNavigate={setLightboxIndex}
+      />
     </div>
   );
 }
@@ -427,6 +444,7 @@ interface GalleryGridProps {
   generating: boolean;
   deletingId: string | null;
   onDelete: (id: string) => void;
+  onOpenLightbox: (index: number) => void;
 }
 
 function GalleryGrid({
@@ -435,6 +453,7 @@ function GalleryGrid({
   generating,
   deletingId,
   onDelete,
+  onOpenLightbox,
 }: GalleryGridProps) {
   // Initial skeleton state (no images yet, still loading).
   if (loading && images.length === 0) {
@@ -486,7 +505,7 @@ function GalleryGrid({
           </motion.div>
         )}
 
-        {images.map((img) => (
+        {images.map((img, idx) => (
           <motion.div
             key={img.id}
             layout
@@ -494,7 +513,8 @@ function GalleryGrid({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.9 }}
             transition={{ duration: 0.3, ease: "easeOut" }}
-            className="group relative aspect-square w-full overflow-hidden rounded-xl border border-border bg-muted/30"
+            className="group relative aspect-square w-full cursor-zoom-in overflow-hidden rounded-xl border border-border bg-muted/30"
+            onClick={() => onOpenLightbox(idx)}
           >
             <img
               src={img.url}
@@ -512,6 +532,7 @@ function GalleryGrid({
                     <a
                       href={img.url}
                       download={`devforge-${img.id}.png`}
+                      onClick={(e) => e.stopPropagation()}
                       className="inline-flex size-8 items-center justify-center rounded-md bg-background/80 text-foreground backdrop-blur transition-colors hover:bg-background hover:text-primary"
                       aria-label="Download image"
                     >
@@ -524,7 +545,7 @@ function GalleryGrid({
                   <TooltipTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => onDelete(img.id)}
+                      onClick={(e) => { e.stopPropagation(); onDelete(img.id); }}
                       disabled={deletingId === img.id}
                       className="inline-flex size-8 items-center justify-center rounded-md bg-background/80 text-foreground backdrop-blur transition-colors hover:bg-destructive hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
                       aria-label="Delete image"

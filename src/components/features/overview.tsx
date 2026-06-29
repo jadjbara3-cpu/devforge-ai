@@ -20,6 +20,7 @@ import {
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { ActivityFeed } from "@/components/features/activity-feed";
 import type { FeatureKey } from "@/lib/features";
 
 const cards: {
@@ -204,6 +205,9 @@ export function Overview({
           })}
         </div>
       </section>
+
+      {/* Live activity feed */}
+      <ActivityFeed onNavigate={onNavigate} />
 
       {/* Stats strip */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
