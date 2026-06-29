@@ -10,6 +10,7 @@ import {
   Star,
   Pencil,
   Copy,
+  CopyPlus,
   Trash2,
   Loader2,
   Code2,
@@ -193,6 +194,7 @@ interface SnippetCardProps {
   snippet: Snippet;
   onEdit: () => void;
   onCopy: () => void;
+  onDuplicate: () => void;
   onDelete: () => void;
   onToggleFavorite: () => void;
 }
@@ -201,6 +203,7 @@ function SnippetCard({
   snippet,
   onEdit,
   onCopy,
+  onDuplicate,
   onDelete,
   onToggleFavorite,
 }: SnippetCardProps) {
@@ -290,6 +293,10 @@ function SnippetCard({
             <Button variant="ghost" size="sm" onClick={onCopy} className="h-8 gap-1.5">
               <Copy className="size-3.5" />
               Copy
+            </Button>
+            <Button variant="ghost" size="sm" onClick={onDuplicate} className="h-8 gap-1.5">
+              <CopyPlus className="size-3.5" />
+              Duplicate
             </Button>
             <Button
               variant="ghost"
@@ -805,6 +812,36 @@ export function SnippetVault() {
     }
   }
 
+  async function duplicateSnippet(snip: Snippet) {
+    try {
+      const res = await fetch("/api/snippets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${snip.title} (copy)`,
+          code: snip.code,
+          language: snip.language,
+          description: snip.description || "",
+          tags: snip.tags || "",
+          favorite: false,
+        }),
+      });
+      if (!res.ok) throw new Error("Failed to duplicate snippet");
+      const data = (await res.json()) as { snippet: Snippet };
+      setSnippets((prev) => [data.snippet, ...prev]);
+      toast({
+        title: "Snippet duplicated",
+        description: `"${snip.title}" was cloned.`,
+      });
+    } catch (err) {
+      toast({
+        title: "Duplicate failed",
+        description: err instanceof Error ? err.message : "Unexpected error.",
+        variant: "destructive",
+      });
+    }
+  }
+
   async function confirmDelete() {
     if (!deleteTarget) return;
     const target = deleteTarget;
@@ -963,6 +1000,7 @@ export function SnippetVault() {
                 snippet={snip}
                 onEdit={() => openEdit(snip)}
                 onCopy={() => copyCode(snip)}
+                onDuplicate={() => duplicateSnippet(snip)}
                 onDelete={() => setDeleteTarget(snip)}
                 onToggleFavorite={() => toggleFavorite(snip)}
               />

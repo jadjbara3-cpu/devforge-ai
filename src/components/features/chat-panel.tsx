@@ -21,10 +21,12 @@ import {
   Check,
   Pencil,
   X,
+  Download,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import { useLoadingBar } from "@/components/layout/loading-bar";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -75,6 +77,7 @@ const SUGGESTIONS: { icon: React.ElementType; label: string }[] = [
 
 export function ChatPanel() {
   const { toast } = useToast();
+  const { start: startLoading, done: stopLoading } = useLoadingBar();
   const [sessionId, setSessionId] = React.useState<string>("default");
   const [sessions, setSessions] = React.useState<ChatSession[]>([]);
   const [sessionsLoading, setSessionsLoading] = React.useState(true);
@@ -286,6 +289,7 @@ export function ChatPanel() {
       };
       setMessages((prev) => [...prev, optimistic]);
       setSending(true);
+      startLoading();
 
       try {
         const res = await fetch("/api/chat", {
@@ -322,10 +326,11 @@ export function ChatPanel() {
         });
       } finally {
         setSending(false);
+        stopLoading();
         requestAnimationFrame(() => textareaRef.current?.focus());
       }
     },
-    [input, sending, sessionId, toast, loadSessions]
+    [input, sending, sessionId, toast, loadSessions, startLoading, stopLoading]
   );
 
   const clearChat = async () => {
@@ -353,6 +358,52 @@ export function ChatPanel() {
     } finally {
       setClearing(false);
     }
+  };
+
+  const exportChat = () => {
+    if (messages.length === 0) {
+      toast({
+        title: "Nothing to export",
+        description: "This conversation is empty.",
+      });
+      return;
+    }
+    const lines: string[] = [];
+    lines.push(`# DevForge AI Conversation`);
+    lines.push("");
+    lines.push(`> Exported on ${new Date().toLocaleString()}`);
+    lines.push(`> Session: \`${sessionId}\``);
+    lines.push("");
+    lines.push("---");
+    lines.push("");
+    for (const m of messages) {
+      if (m.role === "user") {
+        lines.push(`### 🧑 User`);
+        lines.push("");
+        lines.push(m.content);
+        lines.push("");
+      } else if (m.role === "assistant") {
+        lines.push(`### 🤖 DevForge AI`);
+        lines.push("");
+        lines.push(m.content);
+        lines.push("");
+      }
+      lines.push("---");
+      lines.push("");
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `devforge-chat-${new Date().toISOString().slice(0, 10)}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast({
+      title: "Conversation exported",
+      description: `${messages.length} messages downloaded as Markdown.`,
+    });
   };
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -432,6 +483,24 @@ export function ChatPanel() {
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>View past conversations</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+            <TooltipProvider delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={exportChat}
+                    disabled={messageCount === 0}
+                    className="gap-1.5"
+                    aria-label="Export conversation"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Export</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Export as Markdown</TooltipContent>
               </Tooltip>
             </TooltipProvider>
             <Button

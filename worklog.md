@@ -563,3 +563,81 @@ Task: QA assessment + Task Board drag-and-drop, Chat code-copy buttons, Chat ses
   4. Add task card editing (inline edit title/description, not just move/delete).
   5. Add a "regenerate response" button on the last AI Chat assistant message.
   6. Add export of chat conversation as Markdown file.
+
+---
+Task ID: cron-r4
+Agent: web-dev-reviewer (cron cycle 4)
+Task: QA + generate test image (verify lightbox) + Snippet duplicate, Chat Markdown export, Global loading bar
+
+## Current Project Status Description / Assessment
+- Project "DevForge AI" stable from cron cycle 3 (8 modules + Command Palette + Image lightbox + Activity feed + Snippet import/export + Shortcuts help + Chat sessions/rename + Task Board DnD + Chat code-copy + footer clock).
+- Both services confirmed running: Next.js dev (port 3000) + task-service socket.io (port 3003).
+- QA via agent-browser: all 8 modules navigated → 0 console errors, 0 page errors.
+- Dev log: 0 backend errors, all API calls 200.
+- Lint: 0 errors.
+- Core Web Vitals: TTFB 56ms, LCP 688ms, CLS 0, hydration 124ms (370 components).
+- **MAJOR: Lightbox finally E2E-verified** — generated a test image ("A serene Japanese zen garden with cherry blossoms, koi pond, golden hour, ultra detailed") via Image Studio (POST /api/images/generate 200 in 32.9s), clicked the gallery image → lightbox opened with Close button, Download link, and "←→ navigate · Esc close" keyboard hints. This resolves the 3-cycle carry-forward item.
+
+## Current Goals / Completed Modifications / Verification Results
+
+### 0. Lightbox E2E Verification — COMPLETED (carried forward 3 cycles)
+- Generated a real image via Image Studio → appeared in gallery → clicked → lightbox opened correctly with all controls (Close, Download, nav arrows, keyboard hints).
+- `POST /api/images/generate 200 in 32.9s` — image saved to public/generated/ and DB.
+- Lightbox feature is now fully verified end-to-end.
+
+### 1. Snippet Duplicate/Clone — NEW FEATURE
+- Added to `src/components/features/snippet-vault.tsx`:
+  - New `duplicateSnippet(snip)` function: POSTs to `/api/snippets` with title `"{original} (copy)"`, same code/language/description/tags, favorite reset to false. Prepends the new snippet to the list. Toast feedback on success/failure.
+  - Added `CopyPlus` lucide icon import.
+  - Added `onDuplicate` prop to `SnippetCardProps` and a "Duplicate" button in the card action row (between Copy and Delete).
+  - Wired `onDuplicate={() => duplicateSnippet(snip)}` in the card render.
+- Verified: created a "Hello World" snippet → clicked Duplicate → "Hello World (copy)" appeared → toast "Snippet duplicated".
+
+### 2. Chat Export as Markdown — NEW FEATURE
+- Added to `src/components/features/chat-panel.tsx`:
+  - New `exportChat()` function: builds a Markdown string with a title header, export metadata (date, session id), and each message formatted as `### 🧑 User` / `### 🤖 DevForge AI` with `---` separators. Creates a Blob, downloads as `devforge-chat-YYYY-MM-DD.md`. Toast feedback.
+  - Added `Download` lucide icon import.
+  - Added "Export" button (with tooltip "Export as Markdown") in the chat header, before the Clear button. Disabled when no messages.
+- Verified: switched to a session with 4 messages → clicked Export → toast "Conversation exported · 4 messages downloaded as Markdown."
+
+### 3. Global Top Loading Bar — NEW FEATURE
+- Created `src/components/layout/loading-bar.tsx`:
+  - `LoadingBarProvider` with React Context, tracks active async count via ref.
+  - `useLoadingBar()` hook returns `{ start, done }`.
+  - `start()`: increments active count, shows a 2px gradient bar (primary → chart-2 → primary) at the top, animates width from 15% toward 90% in 250ms intervals.
+  - `done()`: decrements count; when 0, completes to 100%, then fades out after 400ms.
+  - Uses framer-motion AnimatePresence for enter/exit.
+  - Supports concurrent async calls (ref-counted).
+- Integrated `LoadingBarProvider` into `src/app/layout.tsx` (wraps children + Toaster).
+- Wired into AI Chat `send()` (startLoading/stopLoading around the fetch).
+- Wired into Image Studio `handleGenerate()` (startLoading/stopLoading around the fetch).
+- The bar appears at the top of the viewport during chat sends and image generation, giving visual feedback for long-running async operations.
+
+### 4. Styling Polish
+- Loading bar: gradient (primary → chart-2 → primary), 2px height, smooth width transitions, framer-motion fade.
+- Snippet card: new Duplicate button with CopyPlus icon, consistent with existing Edit/Copy/Delete button styling.
+- Chat header: Export button with Download icon + tooltip, positioned between History and Clear.
+
+### Verification Results
+- `bun run lint` → 0 errors, 0 warnings.
+- agent-browser E2E:
+  - All 8 modules: 0 page errors.
+  - **Lightbox**: generated image → clicked → lightbox opened with Close/Download/nav hints ✓ (3-cycle carry-forward resolved).
+  - **Snippet duplicate**: created "Hello World" → clicked Duplicate → "Hello World (copy)" appeared + toast ✓.
+  - **Chat export**: switched to 4-message session → clicked Export → toast "4 messages downloaded as Markdown" ✓.
+  - **Loading bar**: sent a chat message → no errors, async completed successfully ✓.
+  - 0 page errors across all interactions.
+- Core Web Vitals after changes: TTFB 56ms, LCP 688ms, CLS 0, hydration 124ms — no regression.
+- Dev log: POST /api/images/generate 200, POST /api/snippets 201, POST /api/chat 200, GET /api/chat/sessions 200 (×3), GET /api/snippets 200, GET /api/activity 200 — all healthy.
+- task-service: ALIVE on port 3003.
+
+## Unresolved Issues / Risks / Next-Phase Priority Recommendations
+- **Loading bar is visual-only**: can't be easily verified via agent-browser snapshots (it's a transient 2px bar). Verified functionally (no errors during async). No real bug.
+- **Lightbox carry-forward RESOLVED**: the 3-cycle pending item is now complete.
+- **Next-phase priorities (for cron cycle 5)**:
+  1. Add task card inline editing (edit title/description/priority directly on the card, not just move/delete).
+  2. Add a "regenerate response" button on the last AI Chat assistant message.
+  3. Add snippet search by tag chips (clickable tag filters).
+  4. Add a "copy prompt" button on generated images in Image Studio (to reuse a prompt).
+  5. Add Web Intel search history (recent searches dropdown).
+  6. Add a settings panel (default TTS voice, default image size, theme preference persistence).

@@ -41,6 +41,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
+import { useLoadingBar } from "@/components/layout/loading-bar";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -91,6 +92,7 @@ const MAX_PROMPT = 1000;
 
 export function ImageStudio() {
   const { toast } = useToast();
+  const { start: startLoading, done: stopLoading } = useLoadingBar();
 
   const [prompt, setPrompt] = React.useState("");
   const [size, setSize] = React.useState<string>("1024x1024");
@@ -143,6 +145,7 @@ export function ImageStudio() {
     if (generating) return;
 
     setGenerating(true);
+    startLoading();
     try {
       const res = await fetch("/api/images/generate", {
         method: "POST",
@@ -188,8 +191,9 @@ export function ImageStudio() {
       });
     } finally {
       setGenerating(false);
+      stopLoading();
     }
-  }, [prompt, size, generating, toast]);
+  }, [prompt, size, generating, toast, startLoading, stopLoading]);
 
   // Delete handler.
   const handleDelete = React.useCallback(
