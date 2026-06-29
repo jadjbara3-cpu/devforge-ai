@@ -17,6 +17,10 @@ import {
   MessageSquare,
   ChevronLeft,
   History,
+  Copy,
+  Check,
+  Pencil,
+  X,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -78,6 +82,9 @@ export function ChatPanel() {
   const [deleteSessionTarget, setDeleteSessionTarget] =
     React.useState<string | null>(null);
   const [deletingSession, setDeletingSession] = React.useState(false);
+  const [renamingId, setRenamingId] = React.useState<string | null>(null);
+  const [renameValue, setRenameValue] = React.useState("");
+  const [renaming, setRenaming] = React.useState(false);
 
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
@@ -209,6 +216,58 @@ export function ChatPanel() {
       }
     },
     [sessionId, loadSessions, toast]
+  );
+
+  const startRename = React.useCallback((s: ChatSession) => {
+    setRenamingId(s.id);
+    setRenameValue(s.title);
+  }, []);
+
+  const cancelRename = React.useCallback(() => {
+    setRenamingId(null);
+    setRenameValue("");
+  }, []);
+
+  const confirmRename = React.useCallback(
+    async (oldId: string) => {
+      const newName = renameValue.trim();
+      if (!newName || newName === oldId) {
+        cancelRename();
+        return;
+      }
+      setRenaming(true);
+      try {
+        const res = await fetch("/api/chat/rename", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: oldId, to: newName }),
+        });
+        if (!res.ok) {
+          const data = (await res.json().catch(() => ({}))) as { error?: string };
+          throw new Error(data.error || "Rename failed");
+        }
+        // If renaming the active session, switch to the new id
+        if (oldId === sessionId) {
+          setSessionId(newName);
+        }
+        await loadSessions();
+        toast({
+          title: "Conversation renamed",
+          description: `Now "${newName}".`,
+        });
+      } catch (err) {
+        toast({
+          title: "Couldn't rename",
+          description:
+            err instanceof Error ? err.message : "Please try again.",
+          variant: "destructive",
+        });
+      } finally {
+        setRenaming(false);
+        cancelRename();
+      }
+    },
+    [renameValue, sessionId, loadSessions, toast, cancelRename]
   );
 
   const send = React.useCallback(
@@ -519,16 +578,20 @@ export function ChatPanel() {
                   <div className="space-y-1.5">
                     {sessions.map((s) => {
                       const isActive = s.id === sessionId;
+                      const isRenaming = renamingId === s.id;
                       return (
                         <div
                           key={s.id}
                           className={cn(
-                            "group relative flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors cursor-pointer",
-                            isActive
+                            "group relative flex items-start gap-2.5 rounded-lg border p-2.5 transition-colors",
+                            isRenaming
                               ? "border-primary/40 bg-primary/5"
-                              : "border-border hover:bg-accent/50"
+                              : "cursor-pointer",
+                            isActive && !isRenaming
+                              ? "border-primary/40 bg-primary/5"
+                              : !isRenaming && "border-border hover:bg-accent/50"
                           )}
-                          onClick={() => switchSession(s.id)}
+                          onClick={() => !isRenaming && switchSession(s.id)}
                         >
                           <div
                             className={cn(
@@ -541,30 +604,93 @@ export function ChatPanel() {
                             <MessageSquare className="h-3.5 w-3.5" />
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="truncate text-xs font-medium">
-                              {s.title}
-                            </p>
-                            <p className="truncate text-[10px] text-muted-foreground">
-                              {s.preview || "No messages"}
-                            </p>
-                            <div className="mt-1 flex items-center gap-2 text-[9px] text-muted-foreground/70">
-                              <span>{s.messageCount} msgs</span>
-                              <span>·</span>
-                              <span>
-                                {new Date(s.lastActivity).toLocaleDateString()}
-                              </span>
-                            </div>
+                            {isRenaming ? (
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  autoFocus
+                                  value={renameValue}
+                                  onChange={(e) => setRenameValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      void confirmRename(s.id);
+                                    } else if (e.key === "Escape") {
+                                      e.preventDefault();
+                                      cancelRename();
+                                    }
+                                  }}
+                                  onClick={(e) => e.stopPropagation()}
+                                  placeholder="Conversation name…"
+                                  className="w-full rounded border border-primary/40 bg-background px-2 py-1 text-xs outline-none focus:ring-1 focus:ring-primary/40"
+                                />
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    void confirmRename(s.id);
+                                  }}
+                                  disabled={renaming}
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-emerald-500 hover:bg-emerald-500/10"
+                                  aria-label="Confirm rename"
+                                >
+                                  {renaming ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Check className="h-3.5 w-3.5" />
+                                  )}
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelRename();
+                                  }}
+                                  className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted"
+                                  aria-label="Cancel rename"
+                                >
+                                  <X className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                <p className="truncate text-xs font-medium">
+                                  {s.title}
+                                </p>
+                                <p className="truncate text-[10px] text-muted-foreground">
+                                  {s.preview || "No messages"}
+                                </p>
+                                <div className="mt-1 flex items-center gap-2 text-[9px] text-muted-foreground/70">
+                                  <span>{s.messageCount} msgs</span>
+                                  <span>·</span>
+                                  <span>
+                                    {new Date(s.lastActivity).toLocaleDateString()}
+                                  </span>
+                                </div>
+                              </>
+                            )}
                           </div>
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setDeleteSessionTarget(s.id);
-                            }}
-                            className="opacity-0 transition-opacity group-hover:opacity-100"
-                            aria-label="Delete conversation"
-                          >
-                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                          </button>
+                          {!isRenaming && (
+                            <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  startRename(s);
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-primary"
+                                aria-label="Rename conversation"
+                              >
+                                <Pencil className="h-3 w-3" />
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setDeleteSessionTarget(s.id);
+                                }}
+                                className="flex h-6 w-6 items-center justify-center rounded text-muted-foreground hover:text-destructive"
+                                aria-label="Delete conversation"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -718,6 +844,52 @@ function EmptyState({ onPick }: { onPick: (q: string) => void }) {
   );
 }
 
+/** Extracts raw text from React children (the <code> inside a <pre>). */
+function extractText(children: React.ReactNode): string {
+  if (typeof children === "string") return children;
+  if (typeof children === "number") return String(children);
+  if (Array.isArray(children)) return children.map(extractText).join("");
+  if (React.isValidElement(children)) {
+    const props = children.props as { children?: React.ReactNode };
+    return extractText(props.children);
+  }
+  return "";
+}
+
+function PreWithCopy({ children }: { children: React.ReactNode }) {
+  const [copied, setCopied] = React.useState(false);
+  const text = React.useMemo(() => extractText(children).replace(/\n$/, ""), [children]);
+
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="group/pre relative my-2">
+      <button
+        onClick={onCopy}
+        className="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/60 bg-background/80 text-muted-foreground opacity-0 backdrop-blur transition-all hover:text-primary group-hover/pre:opacity-100"
+        aria-label="Copy code"
+      >
+        {copied ? (
+          <Check className="h-3.5 w-3.5 text-emerald-500" />
+        ) : (
+          <Copy className="h-3.5 w-3.5" />
+        )}
+      </button>
+      <pre className="scrollbar-thin overflow-x-auto rounded-lg border border-border/60 bg-background/80 p-3 text-xs">
+        {children}
+      </pre>
+    </div>
+  );
+}
+
 function MarkdownContent({ content }: { content: string }) {
   return (
     <div className="text-sm">
@@ -762,11 +934,7 @@ function MarkdownContent({ content }: { content: string }) {
             <strong className="font-semibold">{children}</strong>
           ),
           em: ({ children }) => <em className="italic">{children}</em>,
-          pre: ({ children }) => (
-            <pre className="scrollbar-thin my-2 overflow-x-auto rounded-lg border border-border/60 bg-background/80 p-3 text-xs">
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => <PreWithCopy>{children}</PreWithCopy>,
           code: ({ className, children }) => {
             const isBlock = !!className?.includes("language-");
             if (isBlock) {

@@ -489,3 +489,77 @@ Task: QA assessment + Snippet import/export, Keyboard shortcuts help, Chat sessi
   4. Add a "copy to clipboard" button on code blocks in AI Chat markdown responses.
   5. Add snippet duplicate (clone) action.
   6. Add a global loading bar (NProgress-style) for async navigations.
+
+---
+Task ID: cron-r3
+Agent: web-dev-reviewer (cron cycle 3)
+Task: QA assessment + Task Board drag-and-drop, Chat code-copy buttons, Chat session rename, styling polish
+
+## Current Project Status Description / Assessment
+- Project "DevForge AI" stable from cron cycle 2 (8 modules + Command Palette + Image lightbox + Activity feed + Snippet import/export + Shortcuts help + Chat session switching + footer clock).
+- Both services confirmed running: Next.js dev (port 3000) + task-service socket.io (port 3003).
+- QA via agent-browser: navigated all 8 modules → 0 console errors, 0 page errors.
+- Dev log: 0 backend errors, all API calls 200.
+- Lint: 0 errors.
+- Verdict: project stable → proceeded to add 3 new features per cycle-2 recommendations.
+
+## Current Goals / Completed Modifications / Verification Results
+
+### 1. Task Board Drag-and-Drop — NEW FEATURE
+- Implemented native HTML5 drag-and-drop in `src/components/features/task-board.tsx`:
+  - New state: `draggedTaskId`, `dragOverColumn`.
+  - Handlers: `onDragStart` (sets dragged task + dataTransfer), `onDragEnd` (clears state), `onColumnDragOver` (prevents default + highlights column), `onColumnDragLeave` (clears highlight when leaving column entirely), `onColumnDrop` (emits `task:move` socket event if status changed).
+  - Task cards: `draggable` attribute, opacity dims to 0.4 while dragging, primary ring on dragged card.
+  - Columns: drop zones with `ring-2 ring-primary/20 border-primary/60 bg-primary/5` highlight when dragging over.
+  - Empty-state drop zones: text changes from "Drop tasks here" → "Drop to move here" (primary-colored) when hovered.
+  - Reuses existing socket `task:move` event — backend needed no changes.
+  - Dropdown "Move to" menu retained as fallback for accessibility / non-drag users.
+
+### 2. Copy-to-Clipboard on Chat Code Blocks — NEW FEATURE
+- Added to `src/components/features/chat-panel.tsx`:
+  - New `extractText()` helper: recursively extracts raw text from React children (handles strings, numbers, arrays, elements).
+  - New `PreWithCopy` component: wraps `<pre>` in a relative container with a copy button (top-right). Button appears on hover (`group-hover/pre:opacity-100`). Uses `navigator.clipboard.writeText`. Shows `Copy` icon → `Check` (emerald) icon for 1.8s on success.
+  - Replaced the `pre` markdown renderer with `<PreWithCopy>{children}</PreWithCopy>`.
+  - Added `Copy` and `Check` lucide icons to imports.
+  - Works on all code blocks in AI Chat responses (fenced code blocks).
+
+### 3. Chat Session Rename — NEW FEATURE
+- Created `src/app/api/chat/rename/route.ts` (POST, force-dynamic):
+  - Body: `{ from: string, to: string }`. Validates both non-empty.
+  - Uses `db.chatMessage.updateMany({ where: { session: from }, data: { session: to } })` to rename.
+  - Returns `{ ok: true, renamed: count }`.
+- Added inline rename UI to the chat history drawer in `src/components/features/chat-panel.tsx`:
+  - New state: `renamingId`, `renameValue`, `renaming`.
+  - New handlers: `startRename(session)` (pre-fills input with current title), `cancelRename()`, `confirmRename(oldId)` (POSTs to /api/chat/rename, switches active session if renaming the active one, refreshes session list).
+  - Each session item now shows a Pencil (rename) button on hover alongside the Trash (delete) button.
+  - Clicking rename turns the title into an inline `<input>` with Confirm (Check, emerald) and Cancel (X) buttons.
+  - Keyboard: Enter confirms, Escape cancels.
+  - Toast feedback on success ("Conversation renamed · Now 'name'.") or error.
+  - Added `Pencil` and `X` lucide icons to imports.
+
+### 4. Styling Polish
+- Task Board: drag-over column highlighting (ring + bg), dragged-card dimming + ring, dynamic empty-state text.
+- Chat code blocks: hover-reveal copy button with backdrop blur, emerald check on success.
+- Chat history drawer: rename/delete button row with hover reveal, inline input with focus ring.
+
+### Verification Results
+- `bun run lint` → 0 errors, 0 warnings.
+- agent-browser E2E:
+  - All 8 modules: 0 page errors.
+  - Task Board: 3 columns render with DnD handlers wired (WebSocket shows "Reconnecting" when accessed directly on :3000 — expected, works through Caddy gateway in preview).
+  - AI Chat: sent "Write a tiny TypeScript hello world function in a code block." → LLM replied with `function hello(): string { return "Hello, World!"; }` → "Copy code" button appeared on the code block → clicking it works.
+  - Chat rename: opened History drawer → clicked Rename (Pencil) → inline input pre-filled with "Say hello in one short sentence." → typed "My first test chat" → clicked Confirm → toast "Conversation renamed · Now 'My first test chat'." → `POST /api/chat/rename 200` → active session switched to new name → `GET /api/chat/history?session=My%20first%20test%20chat 200`.
+  - 0 page errors across all interactions.
+- Dev log: POST /api/chat/rename 200, GET /api/chat/sessions 200 (×2), GET /api/chat/history 200 — all healthy.
+- task-service: ALIVE on port 3003.
+
+## Unresolved Issues / Risks / Next-Phase Priority Recommendations
+- **Task Board DnD not E2E-tested with live socket**: agent-browser connects to :3000 directly (WebSocket shows "Reconnecting"); the DnD UI and handlers are wired but live cross-client sync should be verified via the preview panel. No real bug.
+- **Lightbox still not E2E-tested with real images**: gallery remained empty again this cycle. Strongly recommend generating a test image next cycle.
+- **Next-phase priorities (for cron cycle 4)**:
+  1. Generate a test image via Image Studio to verify the lightbox feature end-to-end (3rd cycle carrying this forward).
+  2. Add a "duplicate/clone" action for snippets (one-click copy to new snippet).
+  3. Add a global top loading bar (NProgress-style) for async API calls (chat send, image generate).
+  4. Add task card editing (inline edit title/description, not just move/delete).
+  5. Add a "regenerate response" button on the last AI Chat assistant message.
+  6. Add export of chat conversation as Markdown file.

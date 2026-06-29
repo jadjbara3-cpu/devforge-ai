@@ -109,6 +109,8 @@ export function TaskBoard() {
     description: "",
     priority: "medium" as BoardTask["priority"],
   });
+  const [draggedTaskId, setDraggedTaskId] = React.useState<string | null>(null);
+  const [dragOverColumn, setDragOverColumn] = React.useState<BoardTask["status"] | null>(null);
   const { toast } = useToast();
 
   React.useEffect(() => {
@@ -187,6 +189,46 @@ export function TaskBoard() {
 
   const tasksByStatus = (status: BoardTask["status"]) =>
     tasks.filter((t) => t.status === status);
+
+  // --- Drag and drop handlers ---
+  const onDragStart = (e: React.DragEvent, taskId: string) => {
+    setDraggedTaskId(taskId);
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", taskId);
+  };
+
+  const onDragEnd = () => {
+    setDraggedTaskId(null);
+    setDragOverColumn(null);
+  };
+
+  const onColumnDragOver = (e: React.DragEvent, col: BoardTask["status"]) => {
+    if (!draggedTaskId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+    if (dragOverColumn !== col) setDragOverColumn(col);
+  };
+
+  const onColumnDragLeave = (e: React.DragEvent, col: BoardTask["status"]) => {
+    // Only clear if leaving the column entirely (not entering a child)
+    const related = e.relatedTarget as Node | null;
+    const currentTarget = e.currentTarget as Node;
+    if (related && currentTarget.contains(related)) return;
+    if (dragOverColumn === col) setDragOverColumn(null);
+  };
+
+  const onColumnDrop = (e: React.DragEvent, col: BoardTask["status"]) => {
+    e.preventDefault();
+    const id = draggedTaskId || e.dataTransfer.getData("text/plain");
+    if (id) {
+      const task = tasks.find((t) => t.id === id);
+      if (task && task.status !== col) {
+        moveTask(id, col);
+      }
+    }
+    setDraggedTaskId(null);
+    setDragOverColumn(null);
+  };
 
   return (
     <div className="space-y-5">
@@ -279,7 +321,15 @@ export function TaskBoard() {
             <div
               key={col.key}
               onMouseEnter={() => sendCursor(col.key)}
-              className="flex flex-col rounded-xl border border-t-4 bg-card/40 p-3"
+              onDragOver={(e) => onColumnDragOver(e, col.key)}
+              onDragLeave={(e) => onColumnDragLeave(e, col.key)}
+              onDrop={(e) => onColumnDrop(e, col.key)}
+              className={cn(
+                "flex flex-col rounded-xl border border-t-4 bg-card/40 p-3 transition-colors",
+                dragOverColumn === col.key
+                  ? "border-primary/60 bg-primary/5 ring-2 ring-primary/20"
+                  : ""
+              )}
             >
               <div className="mb-3 flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -308,12 +358,23 @@ export function TaskBoard() {
                     <motion.div
                       key={task.id}
                       layout
+                      draggable
+                      onDragStart={(e) => onDragStart(e as unknown as React.DragEvent, task.id)}
+                      onDragEnd={onDragEnd}
                       initial={{ opacity: 0, scale: 0.95, y: 8 }}
-                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      animate={{
+                        opacity: draggedTaskId === task.id ? 0.4 : 1,
+                        scale: 1,
+                        y: 0,
+                      }}
                       exit={{ opacity: 0, scale: 0.9, y: -8 }}
                       transition={{ type: "spring", stiffness: 350, damping: 28 }}
+                      className={cn(
+                        "cursor-grab active:cursor-grabbing",
+                        draggedTaskId === task.id && "ring-2 ring-primary/40 rounded-xl"
+                      )}
                     >
-                      <Card className="group relative cursor-grab p-3 transition-shadow hover:shadow-md active:cursor-grabbing">
+                      <Card className="group relative p-3 transition-shadow hover:shadow-md">
                         <div className="flex items-start justify-between gap-2">
                           <h4 className="text-sm font-medium leading-tight">
                             {task.title}
@@ -392,8 +453,17 @@ export function TaskBoard() {
                 </AnimatePresence>
 
                 {colTasks.length === 0 && (
-                  <div className="flex flex-1 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">
-                    Drop tasks here
+                  <div
+                    className={cn(
+                      "flex flex-1 items-center justify-center rounded-lg border border-dashed text-xs transition-colors",
+                      dragOverColumn === col.key
+                        ? "border-primary/60 bg-primary/5 text-primary"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    {dragOverColumn === col.key
+                      ? "Drop to move here"
+                      : "Drop tasks here"}
                   </div>
                 )}
               </div>
