@@ -29,6 +29,15 @@ const SHORTCUTS: { group: string; rows: ShortcutRow[] }[] = [
         description: "Show this shortcuts dialog",
       },
       {
+        keys: (
+          <>
+            <Kbd>Ctrl</Kbd>
+            <Kbd>,</Kbd>
+          </>
+        ),
+        description: "Open Settings",
+      },
+      {
         keys: <Kbd>1</Kbd>,
         description: "Jump to Overview",
       },

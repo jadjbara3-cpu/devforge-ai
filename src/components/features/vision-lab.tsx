@@ -16,6 +16,8 @@ import {
   RotateCcw,
   History,
   CircleAlert,
+  Copy,
+  Check,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -56,6 +58,38 @@ function formatSize(bytes: number): string {
 function truncate(text: string, max = 140): string {
   const clean = text.replace(/\s+/g, " ").trim();
   return clean.length > max ? `${clean.slice(0, max)}…` : clean;
+}
+
+function CopyResultButton({ text }: { text: string }) {
+  const [copied, setCopied] = React.useState(false);
+  const onCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* ignore */
+    }
+  };
+  return (
+    <button
+      onClick={onCopy}
+      className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+      aria-label="Copy analysis"
+    >
+      {copied ? (
+        <>
+          <Check className="h-3 w-3 text-emerald-500" />
+          <span className="text-emerald-500">Copied</span>
+        </>
+      ) : (
+        <>
+          <Copy className="h-3 w-3" />
+          Copy
+        </>
+      )}
+    </button>
+  );
 }
 
 export function VisionLab() {
@@ -453,7 +487,13 @@ export function VisionLab() {
                   transition={{ duration: 0.25 }}
                   className="flex-1 overflow-hidden rounded-lg border bg-card/60"
                 >
-                  <ScrollArea className="h-[26rem]">
+                  <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-1.5">
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                      Analysis
+                    </span>
+                    <CopyResultButton text={result} />
+                  </div>
+                  <ScrollArea className="h-[24rem]">
                     <div className="prose prose-sm dark:prose-invert max-w-none px-4 py-3.5 prose-headings:mt-3 prose-headings:font-semibold prose-p:leading-relaxed prose-li:my-0.5 prose-pre:rounded-md prose-pre:bg-muted/60">
                       <ReactMarkdown>{result}</ReactMarkdown>
                     </div>

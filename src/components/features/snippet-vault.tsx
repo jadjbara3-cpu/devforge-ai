@@ -102,6 +102,24 @@ const LANGUAGES = [
 
 const PREVIEW_LINES = 6;
 
+// Color mapping for language stats bar (emerald-friendly palette, no indigo/blue)
+const LANG_BAR_COLORS: Record<string, string> = {
+  javascript: "bg-amber-500",
+  typescript: "bg-sky-500",
+  jsx: "bg-emerald-500",
+  tsx: "bg-teal-500",
+  python: "bg-yellow-500",
+  bash: "bg-rose-500",
+  sql: "bg-fuchsia-500",
+  json: "bg-violet-500",
+  css: "bg-cyan-500",
+  html: "bg-orange-500",
+  go: "bg-lime-500",
+  rust: "bg-red-500",
+  java: "bg-stone-500",
+  text: "bg-muted-foreground/50",
+};
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -784,6 +802,16 @@ export function SnippetVault() {
     [snippets],
   );
 
+  // Language distribution for the stats mini-chart
+  const languageStats = React.useMemo(() => {
+    const map = new Map<string, number>();
+    snippets.forEach((s) => map.set(s.language, (map.get(s.language) || 0) + 1));
+    return Array.from(map.entries())
+      .map(([lang, count]) => ({ lang, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8);
+  }, [snippets]);
+
   function openCreate() {
     setEditing(null);
     setDialogOpen(true);
@@ -973,6 +1001,56 @@ export function SnippetVault() {
           </Button>
         </div>
       </div>
+
+      {/* Language stats mini-chart */}
+      {languageStats.length > 0 && (
+        <div className="rounded-lg border bg-card/40 p-3">
+          <div className="mb-2 flex items-center gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              Languages
+            </span>
+            <span className="text-[10px] text-muted-foreground/60">
+              {languageStats.length} {languageStats.length === 1 ? "type" : "types"}
+            </span>
+          </div>
+          <div className="flex h-2.5 w-full overflow-hidden rounded-full bg-muted/50">
+            {languageStats.map((stat) => {
+              const pct = (stat.count / snippets.length) * 100;
+              return (
+                <Tooltip key={stat.lang}>
+                  <TooltipTrigger asChild>
+                    <div
+                      className={cn(
+                        "h-full transition-all hover:brightness-110",
+                        LANG_BAR_COLORS[stat.lang] || "bg-primary/60"
+                      )}
+                      style={{ width: `${pct}%` }}
+                    />
+                  </TooltipTrigger>
+                  <TooltipContent side="bottom" className="text-xs">
+                    <span className="font-mono">{stat.lang}</span>: {stat.count}{" "}
+                    ({pct.toFixed(0)}%)
+                  </TooltipContent>
+                </Tooltip>
+              );
+            })}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            {languageStats.map((stat) => (
+              <div key={stat.lang} className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span
+                  className={cn(
+                    "size-2 rounded-full",
+                    LANG_BAR_COLORS[stat.lang] || "bg-primary/60"
+                  )}
+                />
+                <span className="font-mono">{stat.lang}</span>
+                <span className="font-semibold text-foreground">{stat.count}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Toolbar */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">

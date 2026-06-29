@@ -14,6 +14,7 @@ import { SiteFooter } from "@/components/layout/footer";
 import { useCommandPalette } from "@/components/layout/command-palette";
 import { ShortcutsHelp } from "@/components/layout/shortcuts-help";
 import { SettingsDialog } from "@/components/layout/settings";
+import { useHotkey } from "@/hooks/use-hotkey";
 import type { FeatureKey } from "@/lib/features";
 
 export default function Home() {
@@ -24,6 +25,9 @@ export default function Home() {
   const { palette, openPalette } = useCommandPalette(select);
   const [shortcutsOpen, setShortcutsOpen] = React.useState(false);
   const [settingsOpen, setSettingsOpen] = React.useState(false);
+
+  // Ctrl+, opens Settings
+  useHotkey(["ctrl", ","], () => setSettingsOpen(true));
 
   return (
     <div className="relative flex min-h-screen flex-col bg-background">
