@@ -898,6 +898,18 @@ function MessageBubble({
   regenerating?: boolean;
 }) {
   const isUser = message.role === "user";
+  const [copied, setCopied] = React.useState(false);
+
+  const onCopyMessage = async () => {
+    try {
+      await navigator.clipboard.writeText(message.content);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1800);
+    } catch {
+      /* ignore */
+    }
+  };
+
   return (
     <motion.div
       layout
@@ -906,7 +918,7 @@ function MessageBubble({
       exit={{ opacity: 0, scale: 0.98 }}
       transition={{ duration: 0.22, ease: "easeOut" }}
       className={cn(
-        "flex w-full items-end gap-2",
+        "group/msg flex w-full items-end gap-2",
         isUser ? "justify-end" : "justify-start"
       )}
     >
@@ -932,17 +944,36 @@ function MessageBubble({
             <MarkdownContent content={message.content} />
           )}
         </div>
-        {canRegenerate && (
+        <div className="flex w-fit items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">
           <button
-            onClick={onRegenerate}
-            disabled={regenerating}
-            className="group/regen flex w-fit items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
-            aria-label="Regenerate response"
+            onClick={onCopyMessage}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+            aria-label="Copy message"
           >
-            <RotateCcw className="h-3 w-3 transition-transform group-hover/regen:-rotate-180" />
-            {regenerating ? "Regenerating…" : "Regenerate"}
+            {copied ? (
+              <>
+                <Check className="h-3 w-3 text-emerald-500" />
+                <span className="text-emerald-500">Copied</span>
+              </>
+            ) : (
+              <>
+                <Copy className="h-3 w-3" />
+                Copy
+              </>
+            )}
           </button>
-        )}
+          {canRegenerate && (
+            <button
+              onClick={onRegenerate}
+              disabled={regenerating}
+              className="group/regen flex items-center gap-1.5 rounded-md px-2 py-1 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-primary"
+              aria-label="Regenerate response"
+            >
+              <RotateCcw className="h-3 w-3 transition-transform group-hover/regen:-rotate-180" />
+              {regenerating ? "Regenerating…" : "Regenerate"}
+            </button>
+          )}
+        </div>
       </div>
       {isUser && (
         <Avatar className="h-8 w-8 shrink-0 ring-1 ring-border">

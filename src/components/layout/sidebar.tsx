@@ -26,6 +26,7 @@ import {
   Search,
   Command,
   Keyboard,
+  Settings,
 } from "lucide-react";
 import type { FeatureKey } from "@/lib/features";
 
@@ -50,11 +51,13 @@ export function Sidebar({
   onSelect,
   onOpenSearch,
   onOpenShortcuts,
+  onOpenSettings,
 }: {
   active: FeatureKey;
   onSelect: (k: FeatureKey) => void;
   onOpenSearch?: () => void;
   onOpenShortcuts?: () => void;
+  onOpenSettings?: () => void;
 }) {
   return (
     <aside className="hidden md:flex md:w-[248px] md:flex-col md:shrink-0 border-r bg-sidebar/60 glass">
@@ -162,6 +165,17 @@ export function Sidebar({
               <kbd className="ml-auto rounded border bg-muted px-1 py-0.5 font-mono text-[9px]">
                 ?
               </kbd>
+            </Button>
+          )}
+          {onOpenSettings && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onOpenSettings}
+              className="shrink-0 text-xs text-muted-foreground"
+              aria-label="Settings"
+            >
+              <Settings className="h-3.5 w-3.5" />
             </Button>
           )}
         </div>

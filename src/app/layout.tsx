@@ -4,6 +4,7 @@ import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
 import { LoadingBarProvider } from "@/components/layout/loading-bar";
+import { SettingsProvider } from "@/components/layout/settings";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -50,8 +51,10 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <LoadingBarProvider>
-            {children}
-            <Toaster />
+            <SettingsProvider>
+              {children}
+              <Toaster />
+            </SettingsProvider>
           </LoadingBarProvider>
         </ThemeProvider>
       </body>

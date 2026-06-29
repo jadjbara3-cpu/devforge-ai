@@ -43,6 +43,7 @@ import {
 } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { useLoadingBar } from "@/components/layout/loading-bar";
+import { useSettings } from "@/components/layout/settings";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -94,9 +95,10 @@ const MAX_PROMPT = 1000;
 export function ImageStudio() {
   const { toast } = useToast();
   const { start: startLoading, done: stopLoading } = useLoadingBar();
+  const { settings } = useSettings();
 
   const [prompt, setPrompt] = React.useState("");
-  const [size, setSize] = React.useState<string>("1024x1024");
+  const [size, setSize] = React.useState<string>(settings.defaultImageSize);
   const [images, setImages] = React.useState<GeneratedImage[]>([]);
   const [loadingGallery, setLoadingGallery] = React.useState(true);
   const [generating, setGenerating] = React.useState(false);

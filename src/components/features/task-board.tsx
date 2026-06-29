@@ -14,6 +14,7 @@ import {
   WifiOff,
   Hand,
   X,
+  Pencil,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -109,6 +110,13 @@ export function TaskBoard() {
     description: "",
     priority: "medium" as BoardTask["priority"],
   });
+  const [editingTask, setEditingTask] = React.useState<BoardTask | null>(null);
+  const [editDraft, setEditDraft] = React.useState({
+    title: "",
+    description: "",
+    priority: "medium" as BoardTask["priority"],
+    status: "todo" as BoardTask["status"],
+  });
   const [draggedTaskId, setDraggedTaskId] = React.useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = React.useState<BoardTask["status"] | null>(null);
   const { toast } = useToast();
@@ -185,6 +193,32 @@ export function TaskBoard() {
 
   const claimTask = (id: string) => {
     socket?.emit("task:claim", { id });
+  };
+
+  const openEdit = (task: BoardTask) => {
+    setEditingTask(task);
+    setEditDraft({
+      title: task.title,
+      description: task.description || "",
+      priority: task.priority,
+      status: task.status,
+    });
+  };
+
+  const saveEdit = () => {
+    if (!editingTask || !editDraft.title.trim()) return;
+    socket?.emit("task:update", {
+      id: editingTask.id,
+      title: editDraft.title.trim(),
+      description: editDraft.description.trim() || undefined,
+      priority: editDraft.priority,
+      status: editDraft.status,
+    });
+    toast({
+      title: "Task updated",
+      description: `"${editDraft.title.trim()}" saved.`,
+    });
+    setEditingTask(null);
   };
 
   const tasksByStatus = (status: BoardTask["status"]) =>
@@ -389,6 +423,9 @@ export function TaskBoard() {
                               </button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEdit(task)}>
+                                <Pencil className="mr-2 h-3.5 w-3.5" /> Edit task
+                              </DropdownMenuItem>
                               {COLUMNS.filter((c) => c.key !== task.status).map(
                                 (c) => (
                                   <DropdownMenuItem
@@ -546,6 +583,83 @@ export function TaskBoard() {
             </Button>
             <Button onClick={createTask} disabled={!draft.title.trim()}>
               <Plus className="mr-1 h-4 w-4" /> Create
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit dialog */}
+      <Dialog open={!!editingTask} onOpenChange={(v) => !v && setEditingTask(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit task</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-2">
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Title</label>
+              <Input
+                value={editDraft.title}
+                onChange={(e) => setEditDraft({ ...editDraft, title: e.target.value })}
+                placeholder="Task title"
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Description</label>
+              <Textarea
+                value={editDraft.description}
+                onChange={(e) => setEditDraft({ ...editDraft, description: e.target.value })}
+                placeholder="Optional details…"
+                rows={3}
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Priority</label>
+                <Select
+                  value={editDraft.priority}
+                  onValueChange={(v) =>
+                    setEditDraft({ ...editDraft, priority: v as BoardTask["priority"] })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="low">Low</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="high">High</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Column</label>
+                <Select
+                  value={editDraft.status}
+                  onValueChange={(v) =>
+                    setEditDraft({ ...editDraft, status: v as BoardTask["status"] })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COLUMNS.map((c) => (
+                      <SelectItem key={c.key} value={c.key}>
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditingTask(null)}>
+              <X className="mr-1 h-4 w-4" /> Cancel
+            </Button>
+            <Button onClick={saveEdit} disabled={!editDraft.title.trim()}>
+              <Pencil className="mr-1 h-4 w-4" /> Save changes
             </Button>
           </DialogFooter>
         </DialogContent>
