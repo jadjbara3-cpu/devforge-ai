@@ -785,3 +785,73 @@ Task: QA + Task card inline editing, Copy-message on chat, Settings panel with l
   4. Add a snippet "language stats" mini-chart on the Snippet Vault header.
   5. Add a "copy message" on Vision Lab results.
   6. Add keyboard shortcut to open Settings (e.g., Ctrl+,).
+
+---
+Task ID: cron-r7
+Agent: web-dev-reviewer (cron cycle 7)
+Task: QA + Voice Lab settings wiring, Web Intel search history, Image gallery size filter
+
+## Current Project Status Description / Assessment
+- Project "DevForge AI" stable from cron cycle 6 (8 modules + 17+ enhancement features).
+- Both services confirmed running: Next.js dev (port 3000) + task-service socket.io (port 3003).
+- QA via agent-browser: all 8 modules navigated → 0 console errors, 0 page errors.
+- Dev log: 0 backend errors, all API calls 200.
+- Lint: 0 errors.
+- Core Web Vitals: TTFB 24ms, LCP 604ms, CLS 0, hydration 13.5ms.
+- Verdict: project stable → proceeded to add 3 new features per cycle-6 recommendations.
+
+## Current Goals / Completed Modifications / Verification Results
+
+### 1. Voice Lab Settings Wiring — NEW FEATURE
+- Updated `src/components/features/voice-lab.tsx` → `TtsTab`:
+  - Imported `useSettings` from `@/components/layout/settings`.
+  - Added `const { settings } = useSettings();`.
+  - Changed `voice` initial state from hardcoded `"tongtong"` to `settings.defaultTtsVoice`.
+  - Changed `speed` initial state from hardcoded `1.0` to `settings.defaultTtsSpeed`.
+  - Now when a user changes their default TTS voice/speed in the Settings panel, Voice Lab picks it up automatically on next mount.
+
+### 2. Web Intel Search History — NEW FEATURE
+- Updated `src/components/features/web-intel.tsx` → `SearchTab`:
+  - Added `History` and `X` lucide icon imports.
+  - New state: `history` (string[]), persisted to `localStorage` key `devforge-web-search-history-v1`.
+  - New functions: `saveToHistory(q)` (prepends, dedupes, caps at 8), `removeFromHistory(q)`, `clearHistory()`.
+  - `runSearch` now calls `saveToHistory(trimmed)` before the fetch.
+  - Added a "Recent:" chip row below the search form: each history item is a clickable pill (re-runs the search) with a per-item X remove button. A "Clear all" link appears at the end.
+  - Loads history from localStorage on mount.
+  - Only shows when history has items.
+
+### 3. Image Gallery Size Filter — NEW FEATURE
+- Updated `src/components/features/image-studio.tsx`:
+  - New state: `galleryFilter` (string, default "all").
+  - New `filteredImages` memo: filters `images` by `galleryFilter` (or returns all if "all").
+  - New `gallerySizes` memo: collects unique sizes present in the gallery (from `SIZE_OPTIONS`).
+  - Added a filter pill row in the gallery header (only shows when `gallerySizes.length > 1`): "All (N)" pill + one pill per unique size with count. Active filter highlighted with primary border/bg.
+  - `GalleryGrid` now receives `filteredImages` instead of `images`.
+  - The `Lightbox` still uses the full `images` array (not filtered) so navigation works across all images.
+
+### 4. Styling Polish
+- Web Intel history chips: rounded-full pills with border, hover border-primary/40, per-item X remove button (hover destructive), "Clear all" link.
+- Image gallery filter pills: consistent with snippet tag-chip styling (active primary, inactive border, hover border-primary/40), counts shown.
+- Voice Lab: seamless settings integration — no visual change, but defaults now respect user preferences.
+
+### Verification Results
+- `bun run lint` → 0 errors, 0 warnings.
+- agent-browser E2E:
+  - All 8 modules: 0 page errors.
+  - **Web Intel search history**: searched "Next.js 16 features" → "RECENT:" chip row appeared with the query → per-item "Remove" button + "Clear all" link present ✓.
+  - **Voice Lab**: navigated → Text → Speech tab loaded cleanly with settings-integrated defaults ✓.
+  - **Image gallery filter**: gallery rendered (1 image, so filter pills don't show — correct behavior per `gallerySizes.length > 1` condition) ✓.
+  - 0 page errors across all interactions.
+- Core Web Vitals after changes: TTFB 24ms, LCP 604ms, CLS 0 — no regression.
+- Dev log: POST /api/web/search 200, all API calls healthy.
+- task-service: ALIVE on port 3003.
+
+## Unresolved Issues / Risks / Next-Phase Priority Recommendations
+- **Image gallery filter not visually tested with multiple sizes**: only 1 image in gallery (single size), so filter pills didn't render. The code is correct (condition `gallerySizes.length > 1`). Recommend generating images of different sizes in a future cycle to visually verify.
+- **Next-phase priorities (for cron cycle 8)**:
+  1. Add a snippet "language stats" mini-chart on the Snippet Vault header (carried forward).
+  2. Add a "copy result" button on Vision Lab analysis output.
+  3. Add keyboard shortcut to open Settings (Ctrl+,).
+  4. Add Web Intel reader history (recent URLs read).
+  5. Add image gallery sort options (newest/oldest/size).
+  6. Add a "favorite" toggle on generated images.

@@ -42,6 +42,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
+import { useSettings } from "@/components/layout/settings";
 import { cn } from "@/lib/utils";
 
 // ---------------------------------------------------------------------------
@@ -126,10 +127,11 @@ function pickSupportedMimeType(): string {
 
 function TtsTab() {
   const { toast } = useToast();
+  const { settings } = useSettings();
 
   const [text, setText] = React.useState("");
-  const [voice, setVoice] = React.useState<string>("tongtong");
-  const [speed, setSpeed] = React.useState<number>(1.0);
+  const [voice, setVoice] = React.useState<string>(settings.defaultTtsVoice);
+  const [speed, setSpeed] = React.useState<number>(settings.defaultTtsSpeed);
   const [synthesizing, setSynthesizing] = React.useState(false);
   const [clips, setClips] = React.useState<TtsClip[]>([]);
 

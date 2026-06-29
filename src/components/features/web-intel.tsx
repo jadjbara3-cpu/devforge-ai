@@ -11,10 +11,12 @@ import {
   Copy,
   ExternalLink,
   Globe,
+  History,
   Loader2,
   Newspaper,
   Search,
   Sparkles,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -156,6 +158,52 @@ function SearchTab({
   const [loading, setLoading] = React.useState(false);
   const [hasSearched, setHasSearched] = React.useState(false);
 
+  // Search history (localStorage)
+  const HISTORY_KEY = "devforge-web-search-history-v1";
+  const [history, setHistory] = React.useState<string[]>([]);
+
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem(HISTORY_KEY);
+      if (raw) setHistory(JSON.parse(raw));
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  const saveToHistory = React.useCallback((q: string) => {
+    setHistory((prev) => {
+      const next = [q, ...prev.filter((h) => h !== q)].slice(0, 8);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const removeFromHistory = React.useCallback((q: string) => {
+    setHistory((prev) => {
+      const next = prev.filter((h) => h !== q);
+      try {
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }, []);
+
+  const clearHistory = React.useCallback(() => {
+    setHistory([]);
+    try {
+      localStorage.removeItem(HISTORY_KEY);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
   const runSearch = React.useCallback(
     async (q: string) => {
       const trimmed = q.trim();
@@ -163,6 +211,7 @@ function SearchTab({
       setLoading(true);
       setHasSearched(true);
       setSubmitted(trimmed);
+      saveToHistory(trimmed);
       try {
         const res = await fetch("/api/web/search", {
           method: "POST",
@@ -197,7 +246,7 @@ function SearchTab({
         setLoading(false);
       }
     },
-    [toast],
+    [toast, saveToHistory],
   );
 
   const onSubmit = (e: React.FormEvent) => {
@@ -256,6 +305,45 @@ function SearchTab({
             <span>{loading ? "Searching…" : "Search"}</span>
           </Button>
         </form>
+
+        {/* Search history */}
+        {history.length > 0 && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+              <History className="size-3" />
+              Recent:
+            </span>
+            {history.map((h) => (
+              <div
+                key={h}
+                className="group/hist flex items-center gap-1 rounded-full border border-border bg-background/50 pl-2.5 pr-1 text-[11px] text-muted-foreground transition-colors hover:border-primary/40 hover:text-foreground"
+              >
+                <button
+                  onClick={() => {
+                    setQuery(h);
+                    void runSearch(h);
+                  }}
+                  className="truncate max-w-[160px] py-0.5"
+                >
+                  {h}
+                </button>
+                <button
+                  onClick={() => removeFromHistory(h)}
+                  className="flex h-4 w-4 items-center justify-center rounded-full text-muted-foreground/60 hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Remove "${h}" from history`}
+                >
+                  <X className="size-2.5" />
+                </button>
+              </div>
+            ))}
+            <button
+              onClick={clearHistory}
+              className="rounded-full px-2 py-0.5 text-[11px] text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
       </CardHeader>
 
       <CardContent className="space-y-4">

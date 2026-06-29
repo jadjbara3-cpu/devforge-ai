@@ -101,6 +101,7 @@ export function ImageStudio() {
   const [size, setSize] = React.useState<string>(settings.defaultImageSize);
   const [images, setImages] = React.useState<GeneratedImage[]>([]);
   const [loadingGallery, setLoadingGallery] = React.useState(true);
+  const [galleryFilter, setGalleryFilter] = React.useState<string>("all");
   const [generating, setGenerating] = React.useState(false);
   const [deletingId, setDeletingId] = React.useState<string | null>(null);
   const [lightboxIndex, setLightboxIndex] = React.useState<number | null>(null);
@@ -255,6 +256,18 @@ export function ImageStudio() {
 
   const activeOrientation =
     SIZE_OPTIONS.find((opt) => opt.value === size)?.orientation ?? "Square";
+
+  // Filtered gallery images by size
+  const filteredImages = React.useMemo(() => {
+    if (galleryFilter === "all") return images;
+    return images.filter((img) => img.size === galleryFilter);
+  }, [images, galleryFilter]);
+
+  // Available sizes in the gallery (for filter pills)
+  const gallerySizes = React.useMemo(() => {
+    const set = new Set(images.map((img) => img.size));
+    return SIZE_OPTIONS.filter((opt) => set.has(opt.value));
+  }, [images]);
 
   return (
     <div className="flex flex-col gap-6">
@@ -424,10 +437,43 @@ export function ImageStudio() {
                 </Badge>
               )}
             </div>
+            {/* Size filter pills */}
+            {gallerySizes.length > 1 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <button
+                  onClick={() => setGalleryFilter("all")}
+                  className={cn(
+                    "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                    galleryFilter === "all"
+                      ? "border-primary bg-primary/10 text-primary"
+                      : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                  )}
+                >
+                  All ({images.length})
+                </button>
+                {gallerySizes.map((opt) => {
+                  const count = images.filter((i) => i.size === opt.value).length;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={() => setGalleryFilter(opt.value)}
+                      className={cn(
+                        "rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors",
+                        galleryFilter === opt.value
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                      )}
+                    >
+                      {opt.value} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </CardHeader>
           <CardContent>
             <GalleryGrid
-              images={images}
+              images={filteredImages}
               loading={loadingGallery}
               generating={generating}
               deletingId={deletingId}
