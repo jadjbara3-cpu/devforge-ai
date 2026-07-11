@@ -58,3 +58,9 @@ worklog.md
 /agent-ctx/
 /tool-results/
 /download/
+
+# Database (local SQLite — contains user data)
+/db/*.db
+/db/*.db-journal
+/db/*.db-wal
+/db/*.db-shm
