@@ -51,4 +51,10 @@ prompt
 
 server.log
 # Skills directory
-/skills/tool-results/
+/skills/
+
+# Internal dev notes (contains provider info, not for public repo)
+worklog.md
+/agent-ctx/
+/tool-results/
+/download/
