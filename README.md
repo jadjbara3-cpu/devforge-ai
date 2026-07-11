@@ -1,6 +1,14 @@
 # DevForge AI
 
+> An all-in-one AI developer workspace built with Next.js 16, TypeScript, and the Z.ai SDK.
+
 An all-in-one AI developer workspace built with Next.js 16, TypeScript, and the Z.ai SDK. It unifies 8 AI-powered modules into a single, fast, beautifully crafted dashboard.
+
+[![License: MIT](https://img.shields.io/badge/License-MIT-emerald.svg)](https://opensource.org/licenses/MIT)
+[![Next.js](https://img.shields.io/badge/Next.js-16-black.svg)](https://nextjs.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5-blue.svg)](https://www.typescriptlang.org/)
+
+**Author:** Jad Jbara · ✉️ jadjbara@live.com
 
 ## Features
 
@@ -108,4 +116,19 @@ prisma/
 
 ## License
 
-Private project.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
+
+## Author
+
+**Jad Jbara**
+
+- 📧 Email: [jadjbara@live.com](mailto:jadjbara@live.com)
+- 🐙 GitHub: [jadjbara3-cpu](https://github.com/jadjbara3-cpu)
+
+Feel free to reach out for questions, suggestions, or contributions!
+
+---
+
+<p align="center">
+  <sub>Built with ❤️ using Next.js, TypeScript, and the Z.ai SDK</sub>
+</p>
