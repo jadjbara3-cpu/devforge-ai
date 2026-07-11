@@ -11,6 +11,7 @@ interface ActivityItem {
   href: string;
   createdAt: string;
   icon: string;
+  url?: string;
 }
 
 export async function GET() {
@@ -49,7 +50,9 @@ export async function GET() {
         id: `snippet-${s.id}`,
         type: "snippet",
         title: `Saved snippet: ${s.title}`,
-        detail: s.description || `${s.language} · ${s.code.split("\n").length} lines`,
+        detail:
+          s.description ||
+          `${s.language} · ${s.code.split("\n").length} lines`,
         href: "snippets",
         createdAt: s.createdAt.toISOString(),
         icon: "code",
@@ -61,13 +64,13 @@ export async function GET() {
         id: `image-${img.id}`,
         type: "image",
         title: "Generated image",
-        detail: img.prompt.slice(0, 100) + (img.prompt.length > 100 ? "…" : ""),
+        detail:
+          img.prompt.slice(0, 100) + (img.prompt.length > 100 ? "…" : ""),
         href: "image",
         createdAt: img.createdAt.toISOString(),
         icon: "image",
-        // include url for thumbnail
-      } as ActivityItem & { url?: string });
-      (items[items.length - 1] as ActivityItem & { url?: string }).url = img.url;
+        url: img.url,
+      });
     }
 
     items.sort((a, b) => +new Date(b.createdAt) - +new Date(a.createdAt));

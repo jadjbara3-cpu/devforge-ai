@@ -411,17 +411,30 @@ export function ChatPanel() {
 
   const regenerateLast = React.useCallback(async () => {
     if (sending || regenerating) return;
-    // Find the last user message
-    const lastUserIdx = [...messages].reverse().findIndex((m) => m.role === "user");
+    // Find the last user message (manual reverse search for compatibility)
+    let lastUserIdx = -1;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === "user") {
+        lastUserIdx = i;
+        break;
+      }
+    }
     if (lastUserIdx === -1) return;
-    const lastUser = messages[messages.length - 1 - lastUserIdx];
+    const lastUser = messages[lastUserIdx];
     if (!lastUser) return;
 
     // Remove the last assistant message (if it exists after the last user msg)
     setMessages((prev) => {
       const slice = [...prev];
-      // Find index of last user message
-      const uIdx = slice.findLastIndex((m) => m.role === "user");
+      // Find index of last user message (manual reverse search)
+      let uIdx = -1;
+      for (let i = slice.length - 1; i >= 0; i--) {
+        if (slice[i].role === "user") {
+          uIdx = i;
+          break;
+        }
+      }
+      if (uIdx === -1) return slice;
       // Remove any assistant messages after it
       while (slice.length - 1 > uIdx) {
         slice.pop();

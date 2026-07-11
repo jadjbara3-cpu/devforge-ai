@@ -60,11 +60,16 @@ export function LoadingBarProvider({ children }: { children: React.ReactNode }) 
         clearInterval(timerRef.current);
         timerRef.current = null;
       }
+      if (completeTimer.current) {
+        clearTimeout(completeTimer.current);
+        completeTimer.current = null;
+      }
       setProgress(100);
       setState("complete");
       completeTimer.current = setTimeout(() => {
         setState("idle");
         setProgress(0);
+        completeTimer.current = null;
       }, 400);
     }
   }, []);

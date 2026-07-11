@@ -69,7 +69,6 @@ export function useSettings() {
 
 export function SettingsProvider({ children }: { children: React.ReactNode }) {
   const [settings, setSettings] = React.useState<AppSettings>(DEFAULT_SETTINGS);
-  const [loaded, setLoaded] = React.useState(false);
 
   React.useEffect(() => {
     try {
@@ -81,7 +80,6 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
     } catch {
       /* ignore */
     }
-    setLoaded(true);
   }, []);
 
   const update = React.useCallback((patch: Partial<AppSettings>) => {
@@ -100,7 +98,7 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <SettingsContext.Provider value={value}>
-      {loaded ? children : null}
+      {children}
     </SettingsContext.Provider>
   );
 }

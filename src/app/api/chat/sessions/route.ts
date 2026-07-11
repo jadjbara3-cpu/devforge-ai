@@ -3,47 +3,44 @@ import { db } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
-interface SessionRow {
-  session: string;
-  count: bigint;
-  lastAt: Date;
-  firstUser?: string;
-}
-
 export async function GET() {
   try {
     // Group by session, count messages, get last activity timestamp.
-    const rows = (await db.chatMessage.groupBy({
+    const grouped = await db.chatMessage.groupBy({
       by: ["session"],
       _count: { id: true },
       _max: { createdAt: true },
-    })) as unknown as SessionRow[];
+    });
 
-    // For each session, grab the first user message as a preview/title.
+    // For each session, grab the first + last user message for title/preview.
     const sessions = await Promise.all(
-      rows.map(async (r) => {
-        const firstUser = await db.chatMessage.findFirst({
-          where: { session: r.session, role: "user" },
-          orderBy: { createdAt: "asc" },
-          select: { content: true },
-        });
-        const lastUser = await db.chatMessage.findFirst({
-          where: { session: r.session, role: "user" },
-          orderBy: { createdAt: "desc" },
-          select: { content: true },
-        });
+      grouped.map(async (g) => {
+        const [firstUser, lastUser] = await Promise.all([
+          db.chatMessage.findFirst({
+            where: { session: g.session, role: "user" },
+            orderBy: { createdAt: "asc" },
+            select: { content: true },
+          }),
+          db.chatMessage.findFirst({
+            where: { session: g.session, role: "user" },
+            orderBy: { createdAt: "desc" },
+            select: { content: true },
+          }),
+        ]);
+
+        const titleText = firstUser?.content || "New conversation";
+        const previewText = lastUser?.content || "";
+
         return {
-          id: r.session,
+          id: g.session,
           title:
-            (firstUser?.content || "New conversation").slice(0, 60) +
-            ((firstUser?.content?.length ?? 0) > 60 ? "…" : ""),
+            titleText.slice(0, 60) + (titleText.length > 60 ? "…" : ""),
           preview:
-            (lastUser?.content || "").slice(0, 80) +
-            ((lastUser?.content?.length ?? 0) > 80 ? "…" : ""),
-          messageCount: Number(r._count?.id ?? r.count ?? 0),
-          lastActivity: (r._max?.createdAt ?? r.lastAt ?? new Date()).toISOString(),
+            previewText.slice(0, 80) + (previewText.length > 80 ? "…" : ""),
+          messageCount: g._count.id,
+          lastActivity: (g._max.createdAt ?? new Date()).toISOString(),
         };
-      })
+      }),
     );
 
     sessions.sort(
