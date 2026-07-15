@@ -25,12 +25,15 @@ import {
   RotateCcw,
   Cpu,
   Square,
+  Activity,
+  Brain,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useLoadingBar } from "@/components/layout/loading-bar";
 import { useSettings } from "@/components/layout/settings";
+import { useContextEngine } from "@/hooks/use-context";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -117,6 +120,16 @@ export function ChatPanel() {
   >(null);
   const { settings } = useSettings();
   const [slot, setSlot] = React.useState<"agents" | "complex">("agents");
+
+  // Context awareness — attached to every chat request. Wrapped in
+  // try/catch so the chat panel keeps working even if the ContextProvider
+  // isn't mounted yet (e.g. during SSR or in isolation).
+  let ctxEngine: ReturnType<typeof useContextEngine> | null = null;
+  try {
+    ctxEngine = useContextEngine();
+  } catch {
+    ctxEngine = null;
+  }
 
   // AbortController for the in-flight streaming request — kept in a ref so
   // the "Stop generating" button can call .abort() on it.
@@ -439,6 +452,14 @@ export function ChatPanel() {
       const abortController = new AbortController();
       abortControllerRef.current = abortController;
 
+      // Gather the context snapshot to attach to the request (no-op when
+      // context awareness is disabled — gatherForChat returns a context
+      // with all-null fields in that case).
+      const context = ctxEngine
+        ? await ctxEngine.gatherForChat("chat")
+        : null;
+      const injectMemories = settings.voiceAssistant?.injectMemories !== false;
+
       try {
         const res = await fetch("/api/chat", {
           method: "POST",
@@ -448,6 +469,8 @@ export function ChatPanel() {
             session: sessionId,
             slot,
             stream: useStreaming,
+            context,
+            injectMemories,
           }),
           signal: abortController.signal,
         });
@@ -540,6 +563,8 @@ export function ChatPanel() {
       sessionId,
       slot,
       settings.streamResponses,
+      settings.voiceAssistant?.injectMemories,
+      ctxEngine,
       toast,
       loadSessions,
       stopLoading,
@@ -931,9 +956,33 @@ export function ChatPanel() {
                 Complex
               </button>
             </div>
-            <p className="text-[11px] text-muted-foreground/70">
-              Active model: <span className="font-mono">{slot}</span>. History saved locally.
-            </p>
+            <div className="flex items-center gap-2 text-[11px] text-muted-foreground/70">
+              {ctxEngine?.badge && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 px-1.5 py-0 text-[10px] font-normal text-primary/80"
+                  title="Context attached to your next message"
+                >
+                  <Activity className="h-2.5 w-2.5" />
+                  <span className="max-w-[160px] truncate font-mono">
+                    {ctxEngine.badge}
+                  </span>
+                </Badge>
+              )}
+              {settings.voiceAssistant?.injectMemories !== false && (
+                <Badge
+                  variant="outline"
+                  className="gap-1 px-1.5 py-0 text-[10px] font-normal text-violet-600/80 dark:text-violet-400/80"
+                  title="Long-term memories are injected into the system prompt"
+                >
+                  <Brain className="h-2.5 w-2.5" />
+                  memory
+                </Badge>
+              )}
+              <span className="hidden sm:inline">
+                Active model: <span className="font-mono">{slot}</span>
+              </span>
+            </div>
           </div>
         </div>
       </Card>

@@ -106,3 +106,169 @@ model SpecialtyServiceConfig {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+
+// ---------------------------------------------------------------------------
+// Computer Use module - local AI agent that controls the Windows desktop.
+// ---------------------------------------------------------------------------
+// A ComputerTask represents one user-issued goal ("Open notepad and type
+// Hello World"). The agent loop runs many ComputerAction steps against the
+// screenshot/mouse/keyboard/shell APIs to achieve it. Both tables are
+// append-only from the UI perspective; the agent route streams updates
+// live via SSE and only persists the final state at the end.
+// ---------------------------------------------------------------------------
+
+model ComputerTask {
+  id         String           @id @default(cuid())
+  task       String           // the user natural-language goal
+  status     String           @default("pending") // pending|running|completed|failed|stopped|awaiting_approval
+  steps      String           @default("[]") // JSON array of ComputerAction snapshots
+  result     String?          // final natural-language summary from the AI
+  error      String?          // populated when status = "failed"
+  maxSteps   Int              @default(50) // hard cap on agent iterations
+  startedAt  DateTime?
+  finishedAt DateTime?
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  actions    ComputerAction[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ComputerAction {
+  id         String   @id @default(cuid())
+  taskId     String
+  task       ComputerTask @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  index      Int      // 0-based step number within the task
+  type       String   // screenshot|click|drag|scroll|type|key|wait|shell|open_app|done|error
+  params     String   // JSON object of action parameters
+  thought    String?  // the AI reasoning for this step (from VLM)
+  result     String?  // JSON object of execution outcome
+  ok         Boolean  @default(true)
+  approval   String   @default("auto") // auto|approved|denied|skipped
+  screenshot String?  // base64 JPEG (compressed) taken BEFORE the action
+  durationMs Int?
+  createdAt  DateTime @default(now())
+
+  @@index([taskId, index])
+}
+
+
+// ---------------------------------------------------------------------------
+// Assistant features (Task 1-C - Subagent P)
+// ---------------------------------------------------------------------------
+
+// Smart Clipboard Manager - every captured clipboard entry.
+// `kind` is "text" | "image" | "url". `category` is the AI-detected label.
+model ClipboardItem {
+  id         String   @id @default(cuid())
+  kind       String   @default("text")     // text | image | url
+  content    String                            // text or data: URL for images
+  preview    String                            // truncated preview for the list
+  category   String   @default("text")        // AI auto-category
+  pinned     Boolean  @default(false)
+  source     String   @default("clipboard")  // clipboard | manual | ai
+  sizeBytes  Int      @default(0)
+  expiresAt  DateTime?                         // nullable = never expire
+  createdAt  DateTime @default(now())
+
+  @@index([pinned, createdAt])
+  @@index([category])
+  @@index([createdAt])
+}
+
+// AI Workflow Recorder - a saved recording of UI actions.
+model Workflow {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  tags        String?  // comma-separated
+  steps       WorkflowStep[]
+  runCount    Int      @default(0)
+  lastRunAt   DateTime?
+  schedule    String?  // cron-like or null
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([createdAt])
+}
+
+// One captured event inside a Workflow (click / type / scroll / nav / custom).
+model WorkflowStep {
+  id          String   @id @default(cuid())
+  workflowId  String
+  workflow    Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  index       Int                       // order in the workflow
+  type        String                    // click | type | scroll | navigate | paste | custom
+  selector    String?                   // CSS selector of the target element
+  text        String?                   // text typed or pasted
+  value       String?                   // scrollY, URL, or custom payload (JSON)
+  description String?                   // human-friendly description
+  durationMs  Int      @default(0)      // delay before this step (replay pacing)
+  createdAt   DateTime @default(now())
+
+  @@index([workflowId, index])
+}
+
+// Proactive AI - every AI-generated proactive suggestion.
+model ProactiveSuggestion {
+  id          String   @id @default(cuid())
+  kind        String                    // tip | offer | summary | reminder
+  title       String
+  body        String
+  action      String?                   // optional action key (open | dismiss | snooze)
+  context     String?                   // JSON blob - what triggered it
+  dismissed   Boolean  @default(false)
+  snoozedUntil DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([dismissed, createdAt])
+}
+
+// Proactive AI - learned usage patterns (e.g. "opens Chat at 09:00").
+model UserPattern {
+  id         String   @id @default(cuid())
+  key        String                    // e.g. "feature:chat:hour:9"
+  value      String                    // e.g. "5" (count)
+  bucket     String                    // hour | day | weekday | app
+  observedAt DateTime @default(now())
+
+  @@unique([key, bucket, observedAt])
+  @@index([bucket, observedAt])
+}
+
+
+// ---------------------------------------------------------------------------
+// AI Memory + Learning
+// ---------------------------------------------------------------------------
+// Long-term facts/preferences/patterns/skills/contacts extracted from
+// conversations (or added manually by the user). Injected into the chat
+// system prompt so the AI "remembers" the user across sessions.
+//
+// Types:
+//   - "fact"        : a one-off statement ("User's name is Jad")
+//   - "preference"  : a durable taste ("Prefers TypeScript over JavaScript")
+//   - "pattern"     : a recurring behaviour ("Asks for code review every morning")
+//   - "skill"       : a learned capability ("Knows how to deploy Next.js on Vercel")
+//   - "contact"     : a person or team ("Works with Sarah on the API")
+//
+// `importance` is a 0-10 weight used by the retrieval layer to rank which
+// memories get injected into the (token-bounded) system prompt.
+// `source` records how the memory was created: "manual" (user typed it in
+// the Memory Manager), "extracted" (the LLM mined it from a conversation),
+// or "observed" (a heuristic noticed a recurring pattern).
+model Memory {
+  id         String   @id @default(cuid())
+  type       String   // "fact" | "preference" | "pattern" | "skill" | "contact"
+  content    String
+  importance Int      @default(5) // 0..10 - higher = more likely to be injected
+  source     String   @default("manual") // "manual" | "extracted" | "observed"
+  pinned     Boolean  @default(false) // pinned memories are always injected
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([type])
+  @@index([importance])
+  @@index([pinned])
+}

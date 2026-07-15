@@ -1,0 +1,170 @@
+/* ============================================================================
+ *  native-title-bar.css
+ *  ----------------------------------------------------------------------------
+ *  Styling for the custom title bar rendered by <NativeTitleBar />.
+ *
+ *  Layout:
+ *
+ *    ┌──────────────────────────────────────────────────────────────┐
+ *    │ [icon] DevForge AI                [-] [□] [×]                 │  ← 36px tall
+ *    └──────────────────────────────────────────────────────────────┘
+ *
+ *  - Position: fixed at the very top of the viewport (z-index: 9999) so
+ *    it floats above the sidebar + main content. The Next.js layout
+ *    should add a top padding of 36px to its root container so content
+ *    isn't hidden behind the bar.
+ *  - Background: uses the DevForge brand dark (#0a0a0a — matches
+ *    globals.css `--background`). Adapts to light/dark theme via CSS
+ *    variables so we don't have to ship a separate light-mode stylesheet.
+ *  - The drag region is the ENTIRE bar (minus the buttons). Buttons stop
+ *    event propagation in their onMouseDown so clicks don't start a drag.
+ *  - On hover, the buttons show a subtle background. The close button
+ *    turns red on hover (Windows convention since Windows 95).
+ *  - Height: 36px — matches Windows 10/11 native title bars. Going
+ *    shorter feels cramped; taller wastes vertical space.
+ * ============================================================================ */
+
+.devforge-titlebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 36px;
+  z-index: 9999;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  /* Brand dark — matches the existing globals.css `--background` token. */
+  background: hsl(var(--background, 0 0% 4%));
+
+  /* Drag region — the React component attaches onMouseDown → start_window_drag.
+     We also set the CSS `app-region: drag` as a fallback for any OS that
+     supports it natively (Electron-style; Tauri doesn't use it but it's
+     harmless). */
+  -webkit-app-region: drag;
+  app-region: drag;
+
+  /* Subtle bottom border so the bar reads as separate from content. */
+  border-bottom: 1px solid hsl(var(--border, 0 0% 14.9%));
+
+  /* The titlebar should NOT capture text-selection. */
+  user-select: none;
+  -webkit-user-select: none;
+
+  /* Make sure the titlebar gets pointer events even though it's fixed. */
+  pointer-events: auto;
+
+  /* Font smoothing for crisp icon rendering. */
+  -webkit-font-smoothing: antialiased;
+}
+
+/* --- Left section: icon + title ------------------------------------------ */
+.devforge-titlebar__left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px;
+  height: 100%;
+  pointer-events: none; /* let the drag handler on the parent receive mousedown */
+}
+
+.devforge-titlebar__icon {
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  /* Slight brand tint — the icon is already orange (#e8770e), so this is
+     just a no-op most of the time, but lets a generic icon pick up the
+     theme. */
+  filter: drop-shadow(0 0 1px rgba(232, 119, 14, 0.4));
+}
+
+.devforge-titlebar__title {
+  font-size: 12px;
+  font-weight: 500;
+  color: hsl(var(--foreground, 0 0% 98%));
+  letter-spacing: 0.2px;
+  /* Subtle opacity so the title reads as secondary information, not a
+     heading. The window content is the user's focus. */
+  opacity: 0.85;
+  white-space: nowrap;
+}
+
+/* --- Center spacer -------------------------------------------------------- */
+.devforge-titlebar__center {
+  flex: 1;
+  height: 100%;
+}
+
+/* --- Right section: window control buttons ------------------------------- */
+.devforge-titlebar__buttons {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  /* The buttons are NOT draggable — the React component stops propagation
+     on their onMouseDown so the parent's drag handler never fires. */
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.devforge-titlebar__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 46px;            /* Windows 11 uses ~46px; matches the native feel */
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: hsl(var(--foreground, 0 0% 98%));
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+
+  /* Reset button defaults so our icon glyphs sit centered. */
+  padding: 0;
+  margin: 0;
+  outline: none;
+  font: inherit;
+}
+
+.devforge-titlebar__btn:hover {
+  background: hsl(var(--muted, 0 0% 14.9%));
+}
+
+.devforge-titlebar__btn:active {
+  background: hsl(var(--muted-foreground, 0 0% 63.9%) / 0.3);
+}
+
+/* Close button — red on hover (Windows convention). */
+.devforge-titlebar__btn--close:hover {
+  background: #e81123;           /* Windows' official close-button red */
+  color: #ffffff;
+}
+
+.devforge-titlebar__btn--close:active {
+  background: #f1707a;
+  color: #ffffff;
+}
+
+/* Focus ring for keyboard navigation (accessibility). */
+.devforge-titlebar__btn:focus-visible {
+  outline: 2px solid hsl(var(--ring, 264 95% 60%));
+  outline-offset: -2px;
+}
+
+/* --- Reduced-motion respect ---------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  .devforge-titlebar__btn {
+    transition: none;
+  }
+}
+
+/* --- RTL ----------------------------------------------------------------- */
+/*  When the user switches to Arabic (dir="rtl" on <html>), flip the
+ *  layout so the buttons sit on the LEFT (matching the OS RTL convention).
+ *  The flex row order handles this automatically, but the icon should
+ *  also flip to the right. */
+[dir="rtl"] .devforge-titlebar__left {
+  flex-direction: row-reverse;
+}

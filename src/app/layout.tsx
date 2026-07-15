@@ -7,6 +7,8 @@ import { LoadingBarProvider } from "@/components/layout/loading-bar";
 import { SettingsProvider } from "@/components/layout/settings";
 import { LanguageProvider } from "@/components/language-provider";
 import { ServiceWorkerRegistrar } from "@/components/pwa/register-sw";
+import { ContextProvider } from "@/hooks/use-context";
+import { VoiceAssistant } from "@/components/features/voice-assistant";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -88,7 +90,10 @@ export default function RootLayout({
           <LanguageProvider>
             <LoadingBarProvider>
               <SettingsProvider>
-                {children}
+                <ContextProvider>
+                  {children}
+                  <VoiceAssistant />
+                </ContextProvider>
                 <Toaster />
               </SettingsProvider>
             </LoadingBarProvider>

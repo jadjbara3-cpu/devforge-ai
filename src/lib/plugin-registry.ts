@@ -359,6 +359,13 @@ import {
   Table,
   TreePine,
   Zap,
+  ClipboardList,
+  Command,
+  Workflow,
+  Bell,
+  MonitorSmartphone,
+  Wand2,
+  ScanLine,
 } from "lucide-react";
 
 export const PLUGIN_ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
@@ -388,6 +395,13 @@ export const PLUGIN_ICONS: Record<string, React.ComponentType<{ className?: stri
   Table,
   TreePine,
   Zap,
+  ClipboardList,
+  Command,
+  Workflow,
+  Bell,
+  MonitorSmartphone,
+  Wand2,
+  ScanLine,
 };
 
 /** Resolve a plugin icon name to a Lucide component, falling back to `Puzzle`. */

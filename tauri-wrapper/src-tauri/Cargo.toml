@@ -1,0 +1,129 @@
+# ============================================================================
+#  DevForge AI — Tauri 2.0 Wrapper
+#  ---------------------------------------------------------------------------
+#  This crate builds the native Windows shell (`DevForgeAI.exe`, ~10-15 MB)
+#  that:
+#    1. Spawns the bundled Bun runtime running the Next.js standalone server
+#       (hidden, no console).
+#    2. Loads http://localhost:3000 in a frameless WebView2 window with a
+#       custom React title bar (drag region + min/max/close buttons).
+#    3. Lives in the system tray (right-click menu: Show/Restart/Quit;
+#       close button minimises to tray instead of quitting).
+#    4. Enforces a single instance (second launch focuses the first window).
+#    5. Remembers window size + position across launches.
+#    6. (Optional) Auto-starts with Windows.
+#
+#  The Tauri binary is intentionally small. Bun + Next.js standalone + the
+#  SQLite DB are bundled ALONGSIDE the .exe by the Inno Setup installer
+#  (into %LOCALAPPDATA%\DevForge_AI\app + \runtime), NOT inside the .exe.
+#  This keeps the Tauri build under 20 MB and lets the existing auto-updater
+#  (Task 2-A) replace just the Next.js app without recompiling Rust.
+#
+#  Tauri 2.x is required (1.x lacks the built-in tray API + permission system).
+# ============================================================================
+
+[package]
+name        = "devforge-ai"
+version     = "1.0.0"
+description = "DevForge AI — Native desktop shell (Tauri 2.0)"
+authors     = ["Jad Jbara <jadjbara@live.com>"]
+license     = "MIT"
+edition     = "2021"
+rust-version = "1.77"     # Tauri 2 MSRV
+
+# ---------------------------------------------------------------------------
+#  Binary name → produces target/release/devforge-ai.exe
+#  The Inno Setup installer renames this to DevForgeAI.exe during staging.
+# ---------------------------------------------------------------------------
+[[bin]]
+name = "devforge-ai"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+
+# --- Tauri 2 core --------------------------------------------------------
+# `tauri` enables the macros + the multi-pattern event system.
+# We pull in the `tray-icon` + `image-png`/`image-ico` features so the
+# TrayIconBuilder can load tray-icon.png / icon.ico at runtime without
+# requiring a separate build step.
+tauri = { version = "2", features = [
+    "tray-icon",
+    "image-png",
+    "image-ico",
+    "devtools",          # remove for final production builds if desired
+] }
+
+# --- Official Tauri 2 plugins -------------------------------------------
+# single-instance — second launch focuses the first window + exits.
+tauri-plugin-single-instance = "2"
+# window-state   — persists window size/position/maximized across launches.
+tauri-plugin-window-state = "2"
+# autostart      — registers a Run-key entry so DevForge starts with Windows.
+tauri-plugin-autostart = "2"
+# notification   — tray balloon ("Minimised to tray" + server-restart msgs).
+tauri-plugin-notification = "2"
+# shell          — lets the Next.js frontend open external URLs in the
+#                  default browser (e.g. the GitHub link in About dialog).
+tauri-plugin-shell = "2"
+# os             — exposes platform info to the frontend (optional, harmless).
+tauri-plugin-os = "2"
+# process        — used by the frontend to ask the shell to exit cleanly
+#                  (alternative to invoking `app.exit()` directly).
+tauri-plugin-process = "2"
+# dialog         — "Are you sure you want to quit?" confirmations.
+tauri-plugin-dialog = "2"
+
+# --- HTTP client (server health-check) -----------------------------------
+# blocking mode is enough: we poll from a dedicated thread, not from async.
+# rustls-tls avoids a system OpenSSL dependency on Windows.
+reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
+
+# --- Serialization -------------------------------------------------------
+serde     = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# --- Logging -------------------------------------------------------------
+log         = "0.4"
+env_logger  = "0.11"
+
+# --- Filesystem helpers --------------------------------------------------
+dirs = "5"
+
+# --- Process management --------------------------------------------------
+# sysinfo gives us a clean cross-platform way to find the spawned bun.exe by
+# PID + kill it (and any child processes it spawned) without shelling out to
+# taskkill. We use std::process::Command for the spawn itself (with the
+# Windows CREATE_NO_WINDOW flag from the `windows-sys` crate below).
+sysinfo = "0.32"
+
+# --- Date/time (window-state log + tray-notif timestamps) ----------------
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
+# --- Windows-specific: CREATE_NO_WINDOW + Job Objects --------------------
+# We use CREATE_NO_WINDOW so the spawned bun.exe never flashes a console,
+# and a Job Object so that if DevForgeAI.exe is killed (Task Manager,
+# logoff, blue-screen) the bun.exe child is cleaned up automatically.
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.59"
+features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Console",
+]
+
+# ---------------------------------------------------------------------------
+#  Release profile — small + fast
+#  Tauri's own template uses these settings; they shrink the .exe to ~10 MB
+#  (webview2-com + wry + tao dominate the size; nothing we can do there).
+# ---------------------------------------------------------------------------
+[profile.release]
+panic         = "abort"        # smaller binary, no unwinding tables
+codegen-units = 1              # better optimisation at the cost of build time
+lto           = true           # link-time optimisation
+strip         = true           # strip debug symbols
+opt-level     = "s"            # optimise for size

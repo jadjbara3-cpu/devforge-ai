@@ -28,6 +28,9 @@ import {
   CheckCircle2,
   AlertTriangle,
   Puzzle,
+  Mic,
+  Brain,
+  Activity,
 } from "lucide-react";
 import {
   Dialog,
@@ -64,8 +67,21 @@ import {
   usePluginRegistry,
   getEnabledPlugins,
 } from "@/lib/plugin-registry";
+import { MemoryManager } from "@/components/features/memory-manager";
+import { useContextEngine } from "@/hooks/use-context";
 
 const STORAGE_KEY = "devforge-settings-v2";
+
+export interface VoiceAssistantSettings {
+  /** Master switch for the "Hey DevForge" wake-word system. OFF by default. */
+  enabled: boolean;
+  /** Speak the AI reply aloud via TTS after a voice command. Default ON. */
+  ttsReply: boolean;
+  /** After each voice command, ask the LLM to mine new memories. Default ON. */
+  autoExtractMemories: boolean;
+  /** Inject long-term memories into every chat request. Default ON. */
+  injectMemories: boolean;
+}
 
 export interface AppSettings {
   defaultImageSize: string;
@@ -74,6 +90,8 @@ export interface AppSettings {
   defaultChatSlot: "agents" | "complex";
   /** Stream chat responses word-by-word via SSE (default: ON). */
   streamResponses: boolean;
+  /** "Hey DevForge" wake-word + voice command system. OFF by default. */
+  voiceAssistant: VoiceAssistantSettings;
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -82,6 +100,12 @@ const DEFAULT_SETTINGS: AppSettings = {
   defaultTtsSpeed: 1.0,
   defaultChatSlot: "agents",
   streamResponses: true,
+  voiceAssistant: {
+    enabled: false,
+    ttsReply: true,
+    autoExtractMemories: true,
+    injectMemories: true,
+  },
 };
 
 const IMAGE_SIZES = [
@@ -128,7 +152,17 @@ export function SettingsProvider({ children }: { children: React.ReactNode }) {
       const raw = localStorage.getItem(STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as Partial<AppSettings>;
-        setSettings({ ...DEFAULT_SETTINGS, ...parsed });
+        // Deep-merge the voiceAssistant sub-object so a partial stored value
+        // (e.g. just `{ enabled: true }`) doesn't clobber the other defaults.
+        const merged: AppSettings = {
+          ...DEFAULT_SETTINGS,
+          ...parsed,
+          voiceAssistant: {
+            ...DEFAULT_SETTINGS.voiceAssistant,
+            ...(parsed.voiceAssistant ?? {}),
+          },
+        };
+        setSettings(merged);
       }
     } catch {
       /* ignore */
@@ -170,6 +204,18 @@ export function SettingsDialog({
   // Subscribe to the plugin registry so the count badge stays in sync.
   usePluginRegistry();
   const enabledPluginCount = getEnabledPlugins().length;
+
+  // Context awareness — consent flags live in the ContextProvider (separate
+  // from AppSettings because they're read on every chat request).
+  let ctxEngine: ReturnType<typeof useContextEngine> | null = null;
+  try {
+    ctxEngine = useContextEngine();
+  } catch {
+    // Settings dialog can render before the ContextProvider mounts (e.g.
+    // during SSR) — fall back to null and skip the Context section.
+    ctxEngine = null;
+  }
+  const va = settings.voiceAssistant;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -263,6 +309,166 @@ export function SettingsDialog({
                 </SelectContent>
               </Select>
             </div>
+          </div>
+
+          {/* Voice Assistant (Hey DevForge) */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Mic className="h-3.5 w-3.5" />
+              {t("settings.voiceAssistant")}
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {t("settings.voiceAssistantDesc")}
+            </p>
+            <div className="space-y-2">
+              {/* Master switch */}
+              <div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+                <div className="min-w-0 pr-3">
+                  <Label className="text-xs">{t("settings.vaEnable")}</Label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                    {t("settings.vaEnableDesc")}
+                  </p>
+                </div>
+                <Switch
+                  checked={va.enabled}
+                  onCheckedChange={(v) =>
+                    update({
+                      voiceAssistant: { ...va, enabled: v },
+                    })
+                  }
+                  aria-label={t("settings.vaEnable")}
+                />
+              </div>
+              {/* TTS reply */}
+              <div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+                <div className="min-w-0 pr-3">
+                  <Label className="text-xs">{t("settings.vaTtsReply")}</Label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                    {t("settings.vaTtsReplyDesc")}
+                  </p>
+                </div>
+                <Switch
+                  checked={va.ttsReply}
+                  onCheckedChange={(v) =>
+                    update({
+                      voiceAssistant: { ...va, ttsReply: v },
+                    })
+                  }
+                  disabled={!va.enabled}
+                  aria-label={t("settings.vaTtsReply")}
+                />
+              </div>
+              {/* Auto extract memories */}
+              <div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+                <div className="min-w-0 pr-3">
+                  <Label className="text-xs">{t("settings.vaAutoExtract")}</Label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                    {t("settings.vaAutoExtractDesc")}
+                  </p>
+                </div>
+                <Switch
+                  checked={va.autoExtractMemories}
+                  onCheckedChange={(v) =>
+                    update({
+                      voiceAssistant: { ...va, autoExtractMemories: v },
+                    })
+                  }
+                  disabled={!va.enabled}
+                  aria-label={t("settings.vaAutoExtract")}
+                />
+              </div>
+              {/* Inject memories into chat */}
+              <div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+                <div className="min-w-0 pr-3">
+                  <Label className="text-xs">{t("settings.vaInjectMemories")}</Label>
+                  <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+                    {t("settings.vaInjectMemoriesDesc")}
+                  </p>
+                </div>
+                <Switch
+                  checked={va.injectMemories}
+                  onCheckedChange={(v) =>
+                    update({
+                      voiceAssistant: { ...va, injectMemories: v },
+                    })
+                  }
+                  aria-label={t("settings.vaInjectMemories")}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Context Awareness (privacy-consented) */}
+          {ctxEngine && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                <Activity className="h-3.5 w-3.5" />
+                {t("settings.contextAwareness")}
+              </div>
+              <p className="text-[11px] leading-relaxed text-muted-foreground">
+                {t("settings.contextDesc")}
+              </p>
+              <div className="space-y-2">
+                <ConsentToggle
+                  icon={Eye}
+                  label={t("settings.ctxShareWindow")}
+                  desc={t("settings.ctxShareWindowDesc")}
+                  checked={ctxEngine.consent.shareActiveWindow}
+                  onCheckedChange={(v) =>
+                    ctxEngine!.setConsent({ shareActiveWindow: v })
+                  }
+                />
+                <ConsentToggle
+                  icon={MessageSquare}
+                  label={t("settings.ctxShareSelection")}
+                  desc={t("settings.ctxShareSelectionDesc")}
+                  checked={ctxEngine.consent.shareSelection}
+                  onCheckedChange={(v) =>
+                    ctxEngine!.setConsent({ shareSelection: v })
+                  }
+                />
+                <ConsentToggle
+                  icon={Wifi}
+                  label={t("settings.ctxShareUrl")}
+                  desc={t("settings.ctxShareUrlDesc")}
+                  checked={ctxEngine.consent.shareBrowserUrl}
+                  onCheckedChange={(v) =>
+                    ctxEngine!.setConsent({ shareBrowserUrl: v })
+                  }
+                />
+                <ConsentToggle
+                  icon={Sparkles}
+                  label={t("settings.ctxShareView")}
+                  desc={t("settings.ctxShareViewDesc")}
+                  checked={ctxEngine.consent.shareDevforgeView}
+                  onCheckedChange={(v) =>
+                    ctxEngine!.setConsent({ shareDevforgeView: v })
+                  }
+                />
+              </div>
+              {ctxEngine.badge && (
+                <div className="rounded-md border border-primary/30 bg-primary/5 px-3 py-1.5 text-[11px] text-primary">
+                  <span className="font-medium">{t("settings.ctxCurrentBadge")}</span>{" "}
+                  <span className="font-mono">{ctxEngine.badge}</span>
+                </div>
+              )}
+              <p className="flex items-start gap-1.5 text-[10px] leading-relaxed text-muted-foreground">
+                <ShieldCheck className="mt-0.5 h-3 w-3 shrink-0 text-emerald-500" />
+                {t("settings.ctxPrivacyNote")}
+              </p>
+            </div>
+          )}
+
+          {/* AI Memory */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              <Brain className="h-3.5 w-3.5" />
+              {t("settings.aiMemory")}
+            </div>
+            <p className="text-[11px] leading-relaxed text-muted-foreground">
+              {t("settings.aiMemoryDesc")}
+            </p>
+            <MemoryManager />
           </div>
 
           {/* Language */}
@@ -1762,6 +1968,40 @@ function UpdatesSection() {
           View releases on GitHub
         </a>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+//  Consent toggle — small labelled row with icon + switch (used by the
+//  Context Awareness section in Settings).
+// ---------------------------------------------------------------------------
+
+function ConsentToggle({
+  icon: Icon,
+  label,
+  desc,
+  checked,
+  onCheckedChange,
+}: {
+  icon: React.ElementType;
+  label: string;
+  desc: string;
+  checked: boolean;
+  onCheckedChange: (v: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between rounded-md border border-border/50 px-3 py-2">
+      <div className="flex min-w-0 items-start gap-2 pr-3">
+        <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-primary/70" />
+        <div className="min-w-0">
+          <Label className="text-xs">{label}</Label>
+          <p className="mt-0.5 text-[10px] leading-relaxed text-muted-foreground">
+            {desc}
+          </p>
+        </div>
+      </div>
+      <Switch checked={checked} onCheckedChange={onCheckedChange} aria-label={label} />
     </div>
   );
 }

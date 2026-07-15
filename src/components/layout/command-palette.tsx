@@ -28,8 +28,17 @@ import {
   Info,
   Languages,
   Puzzle,
+  ClipboardList,
+  Command as CommandIcon,
+  Workflow as WorkflowIcon,
+  Bell,
+  MonitorSmartphone,
 } from "lucide-react";
-import type { FeatureKey, ViewKey } from "@/lib/features";
+import {
+  type FeatureKey,
+  type AssistantFeatureKey,
+  type ViewKey,
+} from "@/lib/features";
 import { APP_AUTHOR } from "@/lib/branding";
 import { useHotkey } from "@/hooks/use-hotkey";
 import { useTheme } from "next-themes";
@@ -39,7 +48,7 @@ import {
   resolvePluginIcon,
 } from "@/lib/plugin-registry";
 
-// Map each feature key to its icon, translation-key, and number shortcut.
+// Map each Workspace feature key to its icon, translation-key, and number shortcut.
 const NAV_META: {
   key: FeatureKey;
   labelKey: string;
@@ -54,6 +63,20 @@ const NAV_META: {
   { key: "web", labelKey: "sidebar.web", icon: Globe, num: 6 },
   { key: "snippets", labelKey: "sidebar.snippets", icon: Code2, num: 7 },
   { key: "board", labelKey: "sidebar.tasks", icon: KanbanSquare, num: 8 },
+];
+
+// Assistant feature keys (Task 1-C) — no number shortcuts.
+const ASSISTANT_NAV_META: {
+  key: AssistantFeatureKey;
+  labelKey: string;
+  descKey: string;
+  icon: React.ElementType;
+}[] = [
+  { key: "clipboard", labelKey: "assistant.clipboard.nav", descKey: "assistant.clipboard.navDesc", icon: ClipboardList },
+  { key: "quickactions", labelKey: "assistant.quickActions.nav", descKey: "assistant.quickActions.navDesc", icon: CommandIcon },
+  { key: "workflow", labelKey: "assistant.workflow.nav", descKey: "assistant.workflow.navDesc", icon: WorkflowIcon },
+  { key: "proactive", labelKey: "assistant.proactive.nav", descKey: "assistant.proactive.navDesc", icon: Bell },
+  { key: "screens", labelKey: "assistant.screens.nav", descKey: "assistant.screens.navDesc", icon: MonitorSmartphone },
 ];
 
 interface CommandPaletteProps {
@@ -80,6 +103,13 @@ export function CommandPalette({
     label: t(m.labelKey),
     icon: m.icon,
     num: m.num,
+  }));
+
+  const assistantItems = ASSISTANT_NAV_META.map((m) => ({
+    key: m.key,
+    label: t(m.labelKey),
+    desc: t(m.descKey),
+    icon: m.icon,
   }));
 
   const go = React.useCallback(
@@ -122,6 +152,27 @@ export function CommandPalette({
                 <Icon className="text-muted-foreground" />
                 <span>{item.label}</span>
                 <CommandShortcut>{item.num}</CommandShortcut>
+              </CommandItem>
+            );
+          })}
+        </CommandGroup>
+
+        {/* Assistant features group */}
+        <CommandSeparator />
+        <CommandGroup heading={t("command.assistant")}>
+          {assistantItems.map((item) => {
+            const Icon = item.icon;
+            return (
+              <CommandItem
+                key={item.key}
+                value={`assistant ${item.label} ${item.desc} ai`}
+                onSelect={() => go(item.key)}
+              >
+                <Icon className="text-primary" />
+                <span>{item.label}</span>
+                <span className="ml-2 truncate text-[10px] text-muted-foreground">
+                  {item.desc}
+                </span>
               </CommandItem>
             );
           })}
@@ -269,8 +320,7 @@ export function useCommandPalette(
   useHotkey(["mod", "k"], () => setOpen((v) => !v));
 
   // Number-key navigation (1-8) — only when not typing in a field.
-  // Number keys map to the 8 built-in features only (plugins don't get
-  // number shortcuts — there's no fixed upper bound on their count).
+  // Number keys map to the 8 built-in Workspace features only.
   React.useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       if (open) return;

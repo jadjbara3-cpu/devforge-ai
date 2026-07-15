@@ -1,0 +1,71 @@
+{
+  "$schema": "https://schema.tauri.app/config/2/capability",
+  "identifier": "default",
+  "description": "Default capability set for the DevForge AI native shell. Grants the Next.js frontend (loaded from http://localhost:3000) the minimum set of permissions required to drive the native window, tray, and server lifecycle.",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+
+    "core:window:default",
+    "core:window:allow-start-dragging",
+    "core:window:allow-minimize",
+    "core:window:allow-maximize",
+    "core:window:allow-unmaximize",
+    "core:window:allow-hide",
+    "core:window:allow-show",
+    "core:window:allow-set-focus",
+    "core:window:allow-is-maximized",
+    "core:window:allow-is-visible",
+    "core:window:allow-close",
+    "core:window:allow-scale-factor",
+    "core:window:allow-inner-size",
+    "core:window:allow-outer-size",
+
+    "core:webview:default",
+    "core:webview:allow-internal-toggle-devtools",
+
+    "core:app:default",
+    "core:app:allow-app-version",
+    "core:app:allow-app-exit",
+
+    "core:event:default",
+
+    "core:resources:default",
+    "core:menu:default",
+    "core:tray:default",
+    "core:path:default",
+
+    "autostart:default",
+    "autostart:allow-enable",
+    "autostart:allow-disable",
+    "autostart:allow-is-enabled",
+
+    "notification:default",
+    "notification:allow-notify",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+
+    "shell:allow-open",
+    "shell:default",
+
+    "os:default",
+    "os:allow-platform",
+    "os:allow-version",
+    "os:allow-hostname",
+    "os:allow-arch",
+
+    "process:default",
+    "process:allow-exit",
+    "process:allow-restart",
+
+    "dialog:default"
+  ],
+  "remote": {
+    "urls": [
+      "http://localhost:3000/**",
+      "http://127.0.0.1:3000/**",
+      "http://localhost:3003/**",
+      "http://127.0.0.1:3003/**"
+    ]
+  }
+}

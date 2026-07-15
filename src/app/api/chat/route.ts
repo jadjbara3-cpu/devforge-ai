@@ -8,11 +8,16 @@ import {
   type ChatSlot,
   type ResolvedChatConfig,
 } from "@/lib/ai-providers";
+import { buildMemoryPromptSection } from "@/lib/memory-engine";
+import {
+  renderContextForPrompt,
+  type UserContext,
+} from "@/lib/context-engine";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
-const SYSTEM_PROMPT =
+const SYSTEM_PROMPT_BASE =
   "You are DevForge AI, a helpful senior software engineer assistant. Be concise, technical, and friendly. Use markdown.";
 
 const HISTORY_LIMIT = 20;
@@ -24,6 +29,13 @@ interface ChatRequestBody {
   session?: unknown;
   slot?: unknown;
   stream?: unknown;
+  /** Optional context snapshot from the client (Context Awareness Engine). */
+  context?: unknown;
+  /**
+   * Whether to inject long-term memories into the system prompt.
+   * Defaults to true. The client can disable this via Settings.
+   */
+  injectMemories?: unknown;
 }
 
 export async function POST(req: NextRequest) {
@@ -45,6 +57,14 @@ export async function POST(req: NextRequest) {
     const slot: ChatSlot =
       body.slot === "complex" || body.slot === "agents" ? body.slot : "agents";
     const stream = body.stream === true;
+    const injectMemories = body.injectMemories !== false; // default true
+
+    // Coerce the context payload — the client sends a UserContext object
+    // built by /api/context (or an empty stub when context awareness is off).
+    const context: UserContext | null =
+      body.context && typeof body.context === "object"
+        ? (body.context as UserContext)
+        : null;
 
     // 1. Resolve the chat client + config for this slot.
     //    Throws ProviderNotConfiguredError → 503.
@@ -73,7 +93,17 @@ export async function POST(req: NextRequest) {
     }
     const { client, config } = resolved;
 
-    // 2. Load history. For both paths we keep the existing semantics: the
+    // 2. Build the augmented system prompt: base + memory + context.
+    //    Memory + context fetches run in parallel to keep latency flat.
+    const [memorySection, contextSection] = await Promise.all([
+      injectMemories ? buildMemoryPromptSection() : Promise.resolve(""),
+      Promise.resolve(context ? renderContextForPrompt(context) : ""),
+    ]);
+    const systemPrompt = [SYSTEM_PROMPT_BASE, memorySection, contextSection]
+      .filter(Boolean)
+      .join("\n");
+
+    // 3. Load history. For both paths we keep the existing semantics: the
     //    new user message is appended AFTER the system prompt and BEFORE
     //    the historical messages (legacy behaviour, preserved verbatim).
     const recent = await db.chatMessage.findMany({
@@ -84,7 +114,7 @@ export async function POST(req: NextRequest) {
     const history = recent.reverse();
 
     const messages: { role: ChatRole; content: string }[] = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       { role: "user", content: message },
       ...history.map((row) => ({
         role: (row.role === "assistant" || row.role === "system"
@@ -94,7 +124,7 @@ export async function POST(req: NextRequest) {
       })),
     ];
 
-    // 3. Dispatch to the streaming (SSE) or non-streaming path.
+    // 4. Dispatch to the streaming (SSE) or non-streaming path.
     if (stream) {
       return await streamChatResponse({
         req,
