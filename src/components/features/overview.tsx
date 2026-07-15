@@ -21,7 +21,9 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ActivityFeed } from "@/components/features/activity-feed";
+import { APP_AUTHOR, getMailtoLink } from "@/lib/branding";
 import type { FeatureKey } from "@/lib/features";
+import { useLanguage } from "@/components/language-provider";
 
 const cards: {
   key: FeatureKey;
@@ -101,6 +103,15 @@ export function Overview({
 }: {
   onNavigate: (k: FeatureKey) => void;
 }) {
+  const { t } = useLanguage();
+
+  // Hero title template is e.g. "The all-in-one {accent} workspace." — we
+  // split on the {accent} placeholder so the gradient span wraps just that
+  // part of the sentence.
+  const heroTemplate = t("overview.heroTitle");
+  const heroAccent = t("overview.heroAccent");
+  const [heroBefore, heroAfter] = heroTemplate.split("{accent}");
+
   return (
     <div className="space-y-8">
       {/* Hero */}
@@ -114,20 +125,29 @@ export function Overview({
         <div className="absolute right-0 top-0 -z-10 h-full w-1/2 bg-gradient-to-l from-primary/10 to-transparent" />
         <Badge variant="secondary" className="mb-4 gap-1.5">
           <Sparkles className="h-3 w-3 text-primary" />
-          8 integrated AI skills
+          {t("overview.badge")}
         </Badge>
         <h1 className="max-w-3xl text-3xl font-bold leading-tight tracking-tight md:text-5xl">
-          The all-in-one <span className="gradient-text">AI developer</span>{" "}
-          workspace.
+          {heroBefore}
+          <span className="gradient-text">{heroAccent}</span>
+          {heroAfter}
         </h1>
         <p className="mt-4 max-w-2xl text-sm text-muted-foreground md:text-base">
-          DevForge AI unifies large language models, vision, image generation,
-          speech, web intelligence, a code snippet vault, and a real-time task
-          board into a single, fast, beautifully crafted dashboard.
+          {t("overview.heroBody")}
+        </p>
+        <p className="mt-1.5 text-xs text-muted-foreground/80">
+          {t("common.by")}{" "}
+          <a
+            href={getMailtoLink("DevForge AI — Hello")}
+            className="font-medium text-foreground/80 underline-offset-2 transition-colors hover:text-primary hover:underline"
+            title={`Email ${APP_AUTHOR}`}
+          >
+            {t("common.author")}
+          </a>
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <Button onClick={() => onNavigate("chat")} size="lg" className="gap-2">
-            <Bot className="h-4 w-4" /> Start chatting
+            <Bot className="h-4 w-4" /> {t("overview.ctaChat")}
           </Button>
           <Button
             onClick={() => onNavigate("image")}
@@ -135,7 +155,7 @@ export function Overview({
             variant="outline"
             className="gap-2"
           >
-            <ImageIcon className="h-4 w-4" /> Generate an image
+            <ImageIcon className="h-4 w-4" /> {t("overview.ctaImage")}
           </Button>
         </div>
 
@@ -159,9 +179,11 @@ export function Overview({
       <section>
         <div className="mb-4 flex items-end justify-between">
           <div>
-            <h2 className="text-xl font-semibold tracking-tight">Modules</h2>
+            <h2 className="text-xl font-semibold tracking-tight">
+              {t("overview.modulesTitle")}
+            </h2>
             <p className="text-sm text-muted-foreground">
-              Pick a workspace to dive in.
+              {t("overview.modulesSubtitle")}
             </p>
           </div>
         </div>
@@ -212,10 +234,10 @@ export function Overview({
       {/* Stats strip */}
       <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
         {[
-          { k: "8", v: "AI skills" },
-          { k: "7", v: "TTS voices" },
-          { k: "∞", v: "Chat turns" },
-          { k: "RT", v: "Live sync" },
+          { k: "8", v: t("overview.statsSkills") },
+          { k: "7", v: t("overview.statsVoices") },
+          { k: "∞", v: t("overview.statsTurns") },
+          { k: "RT", v: t("overview.statsSync") },
         ].map((s) => (
           <Card key={s.v} className="p-4 text-center">
             <div className="text-2xl font-bold gradient-text">{s.k}</div>

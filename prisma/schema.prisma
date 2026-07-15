@@ -78,3 +78,31 @@ model BoardTask {
 
   @@index([status])
 }
+
+// AI provider config — two slots: "complex" (strong / reasoning) and "agents" (fast / default chat).
+// OpenAI-compatible (DeepSeek, OpenAI, Groq, Together, Ollama, etc.).
+model ProviderConfig {
+  id           String   @id @default(cuid())
+  slot         String   @unique // "complex" | "agents"
+  label        String              // friendly name
+  providerType String              // "openai"|"deepseek"|"zai"|"groq"|"together"|"ollama"|"custom"
+  baseUrl      String
+  apiKey       String              // plaintext for now (encrypt later)
+  model        String              // e.g. "deepseek-reasoner", "gpt-4o-mini"
+  temperature  Float?
+  maxTokens    Int?
+  enabled      Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// Specialty (non-OpenAI-compatible) services — currently Z.ai only.
+model SpecialtyServiceConfig {
+  id        String   @id @default(cuid())
+  slot      String   @unique       // "image"|"tts"|"asr"|"web"
+  apiKey    String
+  baseUrl   String   @default("https://api.z.ai/api/paas/v4")
+  enabled   Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

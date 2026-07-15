@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getZai } from "@/lib/zai";
+import type { OpenAI } from "openai";
+
+import {
+  getChatClient,
+  ProviderNotConfiguredError,
+  type ResolvedChatConfig,
+} from "@/lib/ai-providers";
 
 // Vision analysis runs through the Node.js runtime (Buffer + form parsing).
 export const runtime = "nodejs";
-// Allow generous body size for image uploads.
 export const maxDuration = 60;
 
 /**
@@ -13,7 +18,11 @@ export const maxDuration = 60;
  *  - multipart/form-data with fields `image` (File) and `question` (string)
  *  - JSON `{ image: <dataUrl>, question: string }`
  *
- * Returns `{ reply: string }` on success, `{ error: string }` on failure.
+ * Uses the "complex" slot (strong / vision-capable model) via the OpenAI
+ * SDK's standard vision format: messages with `image_url` content parts.
+ * NO `thinking` field — that is a Z.ai-only extension that breaks DeepSeek.
+ *
+ * Returns `{ reply: string }` on success, `{ error: string, code? }` on failure.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -66,9 +75,36 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const zai = await getZai();
+    // Resolve the "complex" slot — must be a vision-capable model.
+    let resolved: { client: OpenAI; config: ResolvedChatConfig } | null = null;
+    try {
+      resolved = await getChatClient("complex");
+    } catch (err) {
+      if (err instanceof ProviderNotConfiguredError) {
+        return NextResponse.json(
+          {
+            error:
+              "Vision requires the Complex tasks model to be configured. Open Settings → AI Provider to add one.",
+            code: err.code,
+            slot: err.slot,
+          },
+          { status: 503 },
+        );
+      }
+      throw err;
+    }
+    if (!resolved) {
+      return NextResponse.json(
+        { error: "Failed to resolve vision model.", code: "INTERNAL" },
+        { status: 500 },
+      );
+    }
+    const { client, config } = resolved;
 
-    const response = await zai.chat.completions.createVision({
+    // Standard OpenAI vision format. Works with GPT-4o, Claude (via OpenAI-
+    // compatible proxy), GLM-4V, Qwen-VL, etc.
+    const completion = await client.chat.completions.create({
+      model: config.model,
       messages: [
         {
           role: "user",
@@ -78,20 +114,28 @@ export async function POST(req: NextRequest) {
           ],
         },
       ],
-      thinking: { type: "disabled" },
+      ...(typeof config.temperature === "number"
+        ? { temperature: config.temperature }
+        : {}),
+      ...(typeof config.maxTokens === "number"
+        ? { max_tokens: config.maxTokens }
+        : {}),
     });
 
     const reply =
-      response.choices?.[0]?.message?.content?.toString().trim() ||
+      completion.choices?.[0]?.message?.content?.toString().trim() ||
       "I couldn't produce an analysis for that image. Please try a different question or image.";
 
-    return NextResponse.json({ reply });
+    return NextResponse.json({ reply, model: config.model });
   } catch (err) {
     console.error("[api/vision/analyze] error:", err);
     const message =
       err instanceof Error
         ? err.message
         : "Failed to analyze image. Please try again.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      { error: message, code: "VISION_FAILED" },
+      { status: 502 },
+    );
   }
 }

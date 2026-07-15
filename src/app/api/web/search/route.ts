@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getZai } from "@/lib/zai";
+
+import { getZaiClient } from "@/lib/ai-providers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,12 +13,27 @@ export const maxDuration = 60;
  *   - query: required, non-empty string.
  *   - num:   optional, default 10, clamped to [1, 20].
  *
+ * Web search is a Z.ai-only specialty service. Gated behind the
+ * SpecialtyServiceConfig "web" slot. Returns 501 if not configured.
+ *
  * Returns: { results: Array<{ url, name, snippet, host_name, rank, date, favicon }> }
- *   - 400 on invalid input.
- *   - 500 with `{ error }` on unexpected failure.
  */
 export async function POST(req: NextRequest) {
   try {
+    // 1. Verify the Z.ai "web" specialty is enabled before doing anything.
+    const { client, enabled, source } = await getZaiClient("web");
+    if (!enabled || !client) {
+      return NextResponse.json(
+        {
+          error:
+            "Web search requires the Z.ai specialty 'web' service. Open Settings → Specialty services to add a Z.ai API key and enable it.",
+          code: "WEB_NOT_CONFIGURED",
+          source,
+        },
+        { status: 501 },
+      );
+    }
+
     const body = await req.json().catch(() => null);
 
     if (!body || typeof body !== "object") {
@@ -47,9 +63,7 @@ export async function POST(req: NextRequest) {
       num = Math.max(1, Math.min(20, Math.floor(parsed)));
     }
 
-    const zai = await getZai();
-
-    const results = await zai.functions.invoke("web_search", {
+    const results = await client.functions.invoke("web_search", {
       query,
       num,
     });

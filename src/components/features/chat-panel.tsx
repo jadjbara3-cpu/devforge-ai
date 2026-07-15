@@ -23,11 +23,14 @@ import {
   X,
   Download,
   RotateCcw,
+  Cpu,
+  Square,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useLoadingBar } from "@/components/layout/loading-bar";
+import { useSettings } from "@/components/layout/settings";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -70,6 +73,21 @@ interface ChatSession {
 const SESSIONS_STORAGE_KEY = "devforge-chat-sessions-v1";
 const ACTIVE_SESSION_KEY = "devforge-chat-active-v1";
 
+/**
+ * SSE events emitted by /api/chat when `stream: true`.
+ * See app/api/chat/route.ts → streamChatResponse for the source.
+ */
+type SSEClientEvent =
+  | { type: "start"; slot: string; model: string }
+  | { type: "delta"; delta: string }
+  | {
+      type: "done";
+      id: string | null;
+      reply: string;
+      aborted?: boolean;
+    }
+  | { type: "error"; error: string; code?: string };
+
 const SUGGESTIONS: { icon: React.ElementType; label: string }[] = [
   { icon: Code2, label: "Explain async/await in TypeScript with an example." },
   { icon: Zap, label: "How do I optimize unnecessary React re-renders?" },
@@ -93,8 +111,24 @@ export function ChatPanel() {
   const [messages, setMessages] = React.useState<ChatMessage[]>([]);
   const [input, setInput] = React.useState("");
   const [sending, setSending] = React.useState(false);
+  const [isStreaming, setIsStreaming] = React.useState(false);
+  const [streamingMessageId, setStreamingMessageId] = React.useState<
+    string | null
+  >(null);
+  const { settings } = useSettings();
+  const [slot, setSlot] = React.useState<"agents" | "complex">("agents");
+
+  // AbortController for the in-flight streaming request — kept in a ref so
+  // the "Stop generating" button can call .abort() on it.
+  const abortControllerRef = React.useRef<AbortController | null>(null);
+
+  // Keep local slot in sync with the saved default (settings.defaultChatSlot).
+  React.useEffect(() => {
+    setSlot(settings.defaultChatSlot);
+  }, [settings.defaultChatSlot]);
   const [historyLoading, setHistoryLoading] = React.useState(true);
   const [clearing, setClearing] = React.useState(false);
+  const [regenerating, setRegenerating] = React.useState(false);
 
   const scrollRef = React.useRef<HTMLDivElement>(null);
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
@@ -274,6 +308,245 @@ export function ChatPanel() {
     [renameValue, sessionId, loadSessions, toast, cancelRename]
   );
 
+  /**
+   * Abort the in-flight streaming request (if any). Called by the
+   * "Stop generating" button. The server receives the abort, persists
+   * whatever partial text it has, and closes the SSE stream.
+   */
+  const stopGenerating = React.useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+  }, []);
+
+  /**
+   * Consume an SSE response from /api/chat. Updates the assistant message
+   * identified by `assistantId` in real-time as deltas arrive.
+   *
+   * Throws on:
+   *   - a `error` event from the server
+   *   - the stream ending without `[DONE]` and no accumulated text
+   *   - AbortError (propagated from the underlying fetch — the caller
+   *     distinguishes this case from a real error)
+   */
+  const consumeSSEStream = React.useCallback(
+    async (res: Response, assistantId: string): Promise<void> => {
+      if (!res.body) throw new Error("Stream not available.");
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let fullText = "";
+      let finalId = assistantId;
+      let sawDone = false;
+
+      const updateMessage = (content: string, id?: string) => {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === assistantId ? { ...m, content, id: id || m.id } : m,
+          ),
+        );
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // SSE events are separated by a blank line. The server emits one
+        // `data:` line per event followed by `\n\n`, so split on that.
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+        for (const evt of events) {
+          const dataLines = evt
+            .split("\n")
+            .filter((l) => l.startsWith("data: "));
+          if (dataLines.length === 0) continue;
+          const data = dataLines.map((l) => l.slice(6)).join("\n");
+          if (data === "[DONE]") {
+            sawDone = true;
+            continue;
+          }
+          let parsed: SSEClientEvent;
+          try {
+            parsed = JSON.parse(data) as SSEClientEvent;
+          } catch {
+            // Skip malformed events (e.g. a chunk boundary mid-JSON).
+            continue;
+          }
+          if (parsed.type === "delta" && typeof parsed.delta === "string") {
+            fullText += parsed.delta;
+            updateMessage(fullText);
+          } else if (parsed.type === "done") {
+            sawDone = true;
+            if (parsed.id) finalId = parsed.id;
+            if (typeof parsed.reply === "string") {
+              // Server's accumulated reply is authoritative.
+              fullText = parsed.reply;
+              updateMessage(fullText, finalId);
+            }
+          } else if (parsed.type === "error") {
+            throw new Error(parsed.error || "Stream error.");
+          }
+          // "start" — no client-side action needed.
+        }
+      }
+
+      if (!sawDone && !fullText.trim()) {
+        throw new Error("The stream ended unexpectedly.");
+      }
+    },
+    [],
+  );
+
+  /**
+   * Shared chat-request executor — used by both `send` and `regenerateLast`.
+   * Handles both streaming (SSE) and non-streaming responses, AbortController
+   * cancellation, and graceful error recovery.
+   *
+   * Persistence:
+   *   - For non-streaming, the server persists both user and assistant rows
+   *     on success and returns the assistant id; we just update the UI.
+   *   - For streaming, the server persists the user message before the first
+   *     delta and the assistant message after the stream completes; we
+   *     receive the assistant id in the `done` event.
+   */
+  const executeChatRequest = React.useCallback(
+    async (params: {
+      content: string;
+      /** Client-side id of the optimistic user message — null for regenerate. */
+      optimisticUserId: string | null;
+      assistantId: string;
+      isRegenerate: boolean;
+    }) => {
+      const { content, optimisticUserId, assistantId, isRegenerate } = params;
+      const useStreaming = settings.streamResponses !== false;
+
+      if (useStreaming) {
+        // Insert an empty assistant bubble that we'll fill as deltas arrive.
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: assistantId,
+            role: "assistant",
+            content: "",
+            createdAt: new Date().toISOString(),
+          },
+        ]);
+        setStreamingMessageId(assistantId);
+        setIsStreaming(true);
+      }
+
+      const abortController = new AbortController();
+      abortControllerRef.current = abortController;
+
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: content,
+            session: sessionId,
+            slot,
+            stream: useStreaming,
+          }),
+          signal: abortController.signal,
+        });
+
+        const contentType = res.headers.get("content-type") || "";
+        const isSSE = contentType.includes("text/event-stream");
+
+        if (useStreaming && isSSE && res.body) {
+          await consumeSSEStream(res, assistantId);
+        } else {
+          // Either the client requested non-streaming, or the server fell
+          // back to JSON (e.g. provider error before the first chunk).
+          const data = (await res.json().catch(() => ({}))) as {
+            reply?: string;
+            id?: string;
+            error?: string;
+          };
+          if (!res.ok || !data.reply) {
+            throw new Error(
+              data.error || "Failed to get a reply from the model.",
+            );
+          }
+          setMessages((prev) => {
+            const exists = prev.some((m) => m.id === assistantId);
+            if (exists) {
+              return prev.map((m) =>
+                m.id === assistantId
+                  ? { ...m, content: data.reply!, id: data.id || m.id }
+                  : m,
+              );
+            }
+            return [
+              ...prev,
+              {
+                id: data.id || assistantId,
+                role: "assistant" as const,
+                content: data.reply!,
+                createdAt: new Date().toISOString(),
+              },
+            ];
+          });
+        }
+        // Refresh session list in background (new session may have been created).
+        void loadSessions();
+      } catch (err) {
+        const isAbort =
+          err instanceof Error &&
+          (err.name === "AbortError" || /aborted/i.test(err.message));
+        if (isAbort) {
+          // User clicked "Stop" — keep partial text (if any), drop empty bubble.
+          setMessages((prev) => {
+            const existing = prev.find((m) => m.id === assistantId);
+            if (existing && existing.content.trim()) {
+              return prev; // keep the partial reply
+            }
+            return prev.filter((m) => m.id !== assistantId);
+          });
+          toast({
+            title: "Generation stopped",
+            description: "Partial response saved.",
+          });
+        } else {
+          // Real error — drop the optimistic user message (for `send`) and
+          // the (possibly empty) assistant bubble.
+          setMessages((prev) =>
+            prev.filter(
+              (m) =>
+                m.id !== assistantId &&
+                (isRegenerate || m.id !== optimisticUserId),
+            ),
+          );
+          toast({
+            title: isRegenerate ? "Regenerate failed" : "Chat error",
+            description:
+              err instanceof Error ? err.message : "Something went wrong.",
+            variant: "destructive",
+          });
+        }
+      } finally {
+        setSending(false);
+        setRegenerating(false);
+        setIsStreaming(false);
+        setStreamingMessageId(null);
+        abortControllerRef.current = null;
+        stopLoading();
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      }
+    },
+    [
+      sessionId,
+      slot,
+      settings.streamResponses,
+      toast,
+      loadSessions,
+      stopLoading,
+      consumeSSEStream,
+    ],
+  );
+
   const send = React.useCallback(
     async (override?: string) => {
       const content = (override ?? input).trim();
@@ -292,46 +565,14 @@ export function ChatPanel() {
       setSending(true);
       startLoading();
 
-      try {
-        const res = await fetch("/api/chat", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: content, session: sessionId }),
-        });
-        const data = (await res.json().catch(() => ({}))) as {
-          reply?: string;
-          id?: string;
-          error?: string;
-        };
-        if (!res.ok || !data.reply) {
-          throw new Error(data.error || "Failed to get a reply from the model.");
-        }
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: data.id || `a-${Date.now()}`,
-            role: "assistant",
-            content: data.reply,
-            createdAt: new Date().toISOString(),
-          },
-        ]);
-        // Refresh session list in background (new session may have been created)
-        void loadSessions();
-      } catch (err) {
-        setMessages((prev) => prev.filter((m) => m.id !== optimistic.id));
-        toast({
-          title: "Chat error",
-          description:
-            err instanceof Error ? err.message : "Something went wrong.",
-          variant: "destructive",
-        });
-      } finally {
-        setSending(false);
-        stopLoading();
-        requestAnimationFrame(() => textareaRef.current?.focus());
-      }
+      await executeChatRequest({
+        content,
+        optimisticUserId: optimistic.id,
+        assistantId: `a-${Date.now()}`,
+        isRegenerate: false,
+      });
     },
-    [input, sending, sessionId, toast, loadSessions, startLoading, stopLoading]
+    [input, sending, executeChatRequest, startLoading]
   );
 
   const clearChat = async () => {
@@ -407,8 +648,6 @@ export function ChatPanel() {
     });
   };
 
-  const [regenerating, setRegenerating] = React.useState(false);
-
   const regenerateLast = React.useCallback(async () => {
     if (sending || regenerating) return;
     // Find the last user message (manual reverse search for compatibility)
@@ -444,41 +683,14 @@ export function ChatPanel() {
 
     setRegenerating(true);
     startLoading();
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: lastUser.content, session: sessionId }),
-      });
-      const data = (await res.json().catch(() => ({}))) as {
-        reply?: string;
-        id?: string;
-        error?: string;
-      };
-      if (!res.ok || !data.reply) {
-        throw new Error(data.error || "Failed to regenerate response.");
-      }
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: data.id || `a-${Date.now()}`,
-          role: "assistant",
-          content: data.reply,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-    } catch (err) {
-      toast({
-        title: "Regenerate failed",
-        description:
-          err instanceof Error ? err.message : "Something went wrong.",
-        variant: "destructive",
-      });
-    } finally {
-      setRegenerating(false);
-      stopLoading();
-    }
-  }, [messages, sending, regenerating, sessionId, toast, startLoading, stopLoading]);
+
+    await executeChatRequest({
+      content: lastUser.content,
+      optimisticUserId: null,
+      assistantId: `a-${Date.now()}`,
+      isRegenerate: true,
+    });
+  }, [messages, sending, regenerating, executeChatRequest, startLoading]);
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -620,6 +832,8 @@ export function ChatPanel() {
                     m.role === "assistant" &&
                     idx === messages.length - 1 &&
                     !sending;
+                  const isStreamingThis =
+                    isStreaming && m.id === streamingMessageId;
                   return (
                     <MessageBubble
                       key={m.id}
@@ -628,12 +842,15 @@ export function ChatPanel() {
                       canRegenerate={isLastAssistant && !regenerating && !sending}
                       onRegenerate={() => void regenerateLast()}
                       regenerating={regenerating && isLastAssistant}
+                      streaming={isStreamingThis}
                     />
                   );
                 })}
               </AnimatePresence>
-              {sending && <TypingBubble />}
-              {regenerating && !sending && <TypingBubble />}
+              {/* While streaming, the in-progress assistant bubble itself is
+                  the typing indicator — don't show a separate TypingBubble. */}
+              {sending && !isStreaming && <TypingBubble />}
+              {regenerating && !sending && !isStreaming && <TypingBubble />}
             </div>
           )}
         </div>
@@ -652,23 +869,72 @@ export function ChatPanel() {
               aria-label="Message input"
               className="min-h-[44px] max-h-[160px] resize-none bg-background"
             />
-            <Button
-              onClick={() => void send()}
-              disabled={!input.trim() || sending}
-              size="icon"
-              className="h-11 w-11 shrink-0 rounded-lg"
-              aria-label="Send message"
-            >
-              {sending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Send className="h-4 w-4" />
-              )}
-            </Button>
+            {isStreaming ? (
+              <Button
+                onClick={stopGenerating}
+                size="icon"
+                variant="destructive"
+                className="h-11 w-11 shrink-0 rounded-lg"
+                aria-label="Stop generating"
+                title="Stop generating"
+              >
+                <Square className="h-4 w-4 fill-current" />
+              </Button>
+            ) : (
+              <Button
+                onClick={() => void send()}
+                disabled={!input.trim() || sending}
+                size="icon"
+                className="h-11 w-11 shrink-0 rounded-lg"
+                aria-label="Send message"
+              >
+                {sending ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
+            )}
           </div>
-          <p className="mt-2 text-[11px] text-muted-foreground/70">
-            Powered by Z.ai LLM. Conversations are saved to your local SQLite database.
-          </p>
+          <div className="mt-2 flex items-center justify-between gap-2">
+            <div className="inline-flex items-center rounded-md border border-border/60 bg-background/60 p-0.5 text-[10px]">
+              <button
+                type="button"
+                onClick={() => setSlot("agents")}
+                disabled={sending}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 transition-colors",
+                  slot === "agents"
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={slot === "agents"}
+                title="Use the Agents model slot (fast / default chat)"
+              >
+                <Bot className="h-3 w-3" />
+                Agents
+              </button>
+              <button
+                type="button"
+                onClick={() => setSlot("complex")}
+                disabled={sending}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-[4px] px-2 py-1 transition-colors",
+                  slot === "complex"
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:text-foreground",
+                )}
+                aria-pressed={slot === "complex"}
+                title="Use the Complex tasks model slot (reasoning / vision-capable)"
+              >
+                <Cpu className="h-3 w-3" />
+                Complex
+              </button>
+            </div>
+            <p className="text-[11px] text-muted-foreground/70">
+              Active model: <span className="font-mono">{slot}</span>. History saved locally.
+            </p>
+          </div>
         </div>
       </Card>
 
@@ -903,12 +1169,14 @@ function MessageBubble({
   canRegenerate,
   onRegenerate,
   regenerating,
+  streaming,
 }: {
   message: ChatMessage;
   isLastAssistant?: boolean;
   canRegenerate?: boolean;
   onRegenerate?: () => void;
   regenerating?: boolean;
+  streaming?: boolean;
 }) {
   const isUser = message.role === "user";
   const [copied, setCopied] = React.useState(false);
@@ -953,8 +1221,24 @@ function MessageBubble({
         >
           {isUser ? (
             <p className="whitespace-pre-wrap break-words">{message.content}</p>
+          ) : message.content.trim() === "" && streaming ? (
+            // Empty bubble while waiting for the first delta — show three
+            // pulsing dots so the user sees the assistant "waking up".
+            <div className="flex items-center gap-1 py-0.5">
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+              <span className="typing-dot h-1.5 w-1.5 rounded-full bg-muted-foreground" />
+            </div>
           ) : (
-            <MarkdownContent content={message.content} />
+            <div className="relative">
+              <MarkdownContent content={message.content} />
+              {streaming && (
+                <span
+                  aria-hidden
+                  className="ml-0.5 inline-block h-3.5 w-[2px] translate-y-0.5 animate-pulse rounded-sm bg-primary align-middle"
+                />
+              )}
+            </div>
           )}
         </div>
         <div className="flex w-fit items-center gap-1 opacity-0 transition-opacity group-hover/msg:opacity-100">

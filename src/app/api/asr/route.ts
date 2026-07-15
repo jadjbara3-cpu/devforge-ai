@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getZai } from "@/lib/zai";
+
+import {
+  getZaiClient,
+  getChatClient,
+  ProviderNotConfiguredError,
+} from "@/lib/ai-providers";
 
 // Speech recognition runs through the Node.js runtime (Buffer + form parsing).
 export const runtime = "nodejs";
@@ -24,8 +29,13 @@ const MAX_FILE_BYTES = 25 * 1024 * 1024; // 25 MB safety cap.
  * POST /api/asr
  *
  * Accepts multipart/form-data with a single `audio` File (webm/wav/mp3/etc).
- * Reads the file, converts it to base64, calls ZAI ASR, and returns
- * `{ text: string }`. On failure responds with JSON `{ error: string }`.
+ *
+ * Strategy:
+ *   1. Try Z.ai specialty ASR (slot "asr").
+ *   2. Fall back to OpenAI whisper-1 via the "complex" slot.
+ *   3. If neither is configured → 501.
+ *
+ * Returns `{ text: string }` on success, `{ error, code? }` on failure.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -86,12 +96,63 @@ export async function POST(req: NextRequest) {
     const buffer = Buffer.from(new Uint8Array(arrayBuffer));
     const base64Audio = buffer.toString("base64");
 
-    const zai = await getZai();
-    const response = await zai.audio.asr.create({ file_base64: base64Audio });
-    const text =
-      typeof response?.text === "string" && response.text.trim().length > 0
-        ? response.text.trim()
-        : "";
+    // 1. Try Z.ai specialty ASR.
+    let text: string = "";
+    try {
+      const { client, enabled } = await getZaiClient("asr");
+      if (enabled && client) {
+        const response = await client.audio.asr.create({
+          file_base64: base64Audio,
+        });
+        text =
+          typeof response?.text === "string" && response.text.trim().length > 0
+            ? response.text.trim()
+            : "";
+      }
+    } catch (zaiErr) {
+      console.warn("[asr] Z.ai specialty failed, trying fallback:", zaiErr instanceof Error ? zaiErr.message : zaiErr);
+      text = "";
+    }
+
+    // 2. Fall back to OpenAI whisper-1 via the "complex" slot.
+    if (!text) {
+      try {
+        const { client } = await getChatClient("complex");
+        // OpenAI expects multipart upload — convert from base64 back to a Blob/File.
+        const audioBlob = new Blob([buffer], { type: baseType || "audio/webm" });
+        const file = new File([audioBlob], field.name || "audio.webm", {
+          type: baseType || "audio/webm",
+        });
+
+        const transcription = await client.audio.transcriptions.create({
+          model: "whisper-1",
+          file,
+        });
+
+        text =
+          typeof transcription.text === "string" && transcription.text.trim().length > 0
+            ? transcription.text.trim()
+            : "";
+      } catch (err) {
+        if (err instanceof ProviderNotConfiguredError) {
+          return NextResponse.json(
+            {
+              error:
+                "Speech recognition is not configured. Enable the Z.ai specialty 'asr' service, OR set the Complex tasks model slot to an OpenAI-compatible provider that supports whisper-1.",
+              code: "ASR_NOT_CONFIGURED",
+            },
+            { status: 501 },
+          );
+        }
+        console.error("[api/asr] OpenAI fallback failed:", err);
+        const message =
+          err instanceof Error ? err.message : "Failed to transcribe audio.";
+        return NextResponse.json(
+          { error: message, code: "ASR_FAILED" },
+          { status: 502 },
+        );
+      }
+    }
 
     if (!text) {
       return NextResponse.json(

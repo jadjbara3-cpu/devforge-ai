@@ -4,7 +4,11 @@ import path from "node:path";
 import crypto from "node:crypto";
 
 import { db } from "@/lib/db";
-import { getZai } from "@/lib/zai";
+import {
+  getZaiClient,
+  getChatClient,
+  ProviderNotConfiguredError,
+} from "@/lib/ai-providers";
 
 // Image generation is CPU/IO bound and writes to disk; use the Node runtime.
 export const runtime = "nodejs";
@@ -23,6 +27,10 @@ const SUPPORTED_SIZES = [
 
 const DEFAULT_SIZE = "1024x1024";
 
+// DALL-E 3 only supports these three sizes — used when we fall back to the
+// OpenAI "complex" slot's image endpoint.
+const DALLE3_SIZES = new Set(["1024x1024", "1792x1024", "1024x1792"]);
+
 type SupportedSize = (typeof SUPPORTED_SIZES)[number];
 
 function isSupportedSize(value: unknown): value is SupportedSize {
@@ -36,7 +44,11 @@ function isSupportedSize(value: unknown): value is SupportedSize {
  * POST /api/images/generate
  *
  * Body: { prompt: string, size?: string }
- * Returns: { id, url, prompt, size, createdAt }
+ *
+ * Strategy:
+ *   1. Try Z.ai specialty service (slot "image") — best for Z.ai users.
+ *   2. Fall back to OpenAI DALL-E 3 via the "complex" slot.
+ *   3. If neither is configured → 501 with a helpful message.
  */
 export async function POST(req: NextRequest) {
   try {
@@ -54,34 +66,71 @@ export async function POST(req: NextRequest) {
     const prompt = body.prompt.trim();
     const size = isSupportedSize(body.size) ? body.size : DEFAULT_SIZE;
 
-    // 1. Call the ZAI image generation API.
+    // 1. Try Z.ai specialty (returns base64).
     let base64: string | undefined;
     try {
-      const zai = await getZai();
-      const response = await zai.images.generations.create({
-        prompt,
-        size,
-      });
-      base64 = response.data?.[0]?.base64;
-    } catch (genErr) {
-      console.error("[images/generate] ZAI call failed:", genErr);
+      const { client, enabled } = await getZaiClient("image");
+      if (enabled && client) {
+        const response = await client.images.generations.create({
+          prompt,
+          size,
+        });
+        base64 = response.data?.[0]?.base64;
+      }
+    } catch (zaiErr) {
+      console.warn("[images/generate] Z.ai specialty failed, trying fallback:", zaiErr instanceof Error ? zaiErr.message : zaiErr);
+      base64 = undefined;
+    }
+
+    // 2. Fall back to OpenAI DALL-E 3 via the "complex" slot.
+    if (!base64) {
+      try {
+        const { client, config } = await getChatClient("complex");
+        const dalleSize = DALLE3_SIZES.has(size) ? size : "1024x1024";
+        const response = await client.images.generate({
+          model: "dall-e-3",
+          prompt,
+          n: 1,
+          size: dalleSize as "1024x1024" | "1792x1024" | "1024x1792",
+          response_format: "b64_json",
+        });
+        base64 = response.data?.[0]?.b64_json ?? undefined;
+        if (base64) {
+          console.info(`[images/generate] using OpenAI DALL-E 3 via complex slot (${config.model} parent).`);
+        }
+      } catch (err) {
+        if (err instanceof ProviderNotConfiguredError) {
+          return NextResponse.json(
+            {
+              error:
+                "Image generation is not configured. Enable the Z.ai specialty 'image' service, OR set the Complex tasks model slot to an OpenAI-compatible provider that supports dall-e-3.",
+              code: "IMAGE_NOT_CONFIGURED",
+            },
+            { status: 501 },
+          );
+        }
+        console.error("[images/generate] OpenAI DALL-E fallback failed:", err);
+        const message =
+          err instanceof Error ? err.message : "Image generation failed.";
+        return NextResponse.json(
+          { error: message, code: "IMAGE_FAILED" },
+          { status: 502 },
+        );
+      }
+    }
+
+    if (!base64 || !base64.trim()) {
       return NextResponse.json(
         {
           error:
-            "The image generation service failed to respond. Please try again in a moment.",
+            "The image model returned an empty response. Try a different prompt or provider.",
+          code: "IMAGE_EMPTY",
         },
         { status: 502 },
       );
     }
 
-    if (!base64 || !base64.trim()) {
-      return NextResponse.json(
-        { error: "The image model returned an empty response." },
-        { status: 502 },
-      );
-    }
-
-    // 2. Decode and persist the image to public/generated/.
+    // 3. Decode and persist the image to public/generated/.
     const buffer = Buffer.from(base64, "base64");
     const filename = `${crypto.randomUUID()}.png`;
     const publicDir = path.join(process.cwd(), "public", "generated");
@@ -101,7 +150,7 @@ export async function POST(req: NextRequest) {
 
     const url = `/generated/${filename}`;
 
-    // 3. Persist metadata in the database.
+    // 4. Persist metadata in the database.
     const saved = await db.generatedImage.create({
       data: { prompt, url, size },
     });

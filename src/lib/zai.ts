@@ -1,65 +1,65 @@
-import ZAI from "z-ai-web-dev-sdk";
-
 /**
- * AI Provider configuration.
- *
- * The Z.ai SDK accepts a config object with `baseUrl` and `apiKey`.
- * We read these from environment variables so the app works with
- * ANY OpenAI-compatible AI provider (Z.ai, OpenAI, Azure, Ollama, etc.).
- *
- * Set these in your .env file:
- *   AI_API_KEY=your-key-here
- *   AI_BASE_URL=https://api.example.com/v1
- *
- * If not set, the SDK falls back to its default .z-ai-config file lookup.
+ * Backward-compatibility shim. New code should import from `@/lib/ai-providers`
+ * directly. This file re-exports the legacy `getZai` / `getProviderStatus`
+ * shapes so existing API routes keep working during the migration.
  */
 
-interface ZaiConfig {
-  apiKey: string;
-  baseUrl: string;
-}
+import ZAI from "z-ai-web-dev-sdk";
 
-function loadConfigFromEnv(): ZaiConfig | null {
-  const apiKey = process.env.AI_API_KEY?.trim();
-  const baseUrl = process.env.AI_BASE_URL?.trim();
-  if (apiKey && baseUrl) {
-    return { apiKey, baseUrl };
-  }
-  return null;
-}
-
-let zaiInstance: Awaited<ReturnType<typeof ZAI.create>> | null = null;
-
-export async function getZai() {
-  if (!zaiInstance) {
-    const envConfig = loadConfigFromEnv();
-    if (envConfig) {
-      // Use explicit env configuration (works with any OpenAI-compatible provider)
-      zaiInstance = await ZAI.create(envConfig);
-    } else {
-      // Fall back to the SDK's default config file lookup (.z-ai-config)
-      zaiInstance = await ZAI.create();
-    }
-  }
-  return zaiInstance;
-}
+import {
+  getZaiClient,
+  invalidateProviderCache,
+} from "@/lib/ai-providers";
 
 export type ZaiClient = Awaited<ReturnType<typeof ZAI.create>>;
 
 /**
- * Returns the current provider configuration status (without exposing the key).
- * Used by the settings UI to show whether a key is configured.
+ * Legacy singleton accessor. Delegates to `getZaiClient("web")` so existing
+ * callers (image / tts / asr / web routes) keep working. The returned client
+ * is TTL-cached in ai-providers.ts; call `invalidateZaiCache()` to reset.
+ */
+export async function getZai(): Promise<ZaiClient> {
+  const { client } = await getZaiClient("web");
+  if (!client) {
+    throw new Error(
+      "Z.ai specialty services are not configured. Open Settings → Specialty services to add a Z.ai API key.",
+    );
+  }
+  return client;
+}
+
+/**
+ * Legacy status accessor. Returns a shape close to the old
+ * `{ configured, source, baseUrl }` for callers that haven't migrated.
+ *
+ * NOTE: Synchronous best-effort — we cannot await DB here. The new async
+ * `getProviderStatus(slot)` lives in `@/lib/ai-providers` (re-exported below
+ * as `getProviderStatusAsync` for migration).
  */
 export function getProviderStatus(): {
   configured: boolean;
   source: "env" | "config-file" | "none";
   baseUrl?: string;
 } {
-  const envConfig = loadConfigFromEnv();
-  if (envConfig) {
-    return { configured: true, source: "env", baseUrl: envConfig.baseUrl };
+  const envKey = process.env.AI_API_KEY?.trim();
+  const envBase = process.env.AI_BASE_URL?.trim();
+  if (envKey && envBase) {
+    return { configured: true, source: "env", baseUrl: envBase };
   }
-  // The SDK will try .z-ai-config on create — we can't know without reading the file,
-  // so report "config-file" optimistically (the SDK will throw on create if missing).
   return { configured: false, source: "none" };
 }
+
+/**
+ * Invalidate the Z.ai client cache. Call after saving a new specialty
+ * config so the next request rebuilds the client.
+ */
+export function invalidateZaiCache(): void {
+  invalidateProviderCache();
+}
+
+// Re-export the new orchestration API so importers can migrate cleanly.
+export {
+  getZaiClient,
+  getProviderStatus as getProviderStatusAsync,
+  invalidateProviderCache,
+} from "@/lib/ai-providers";

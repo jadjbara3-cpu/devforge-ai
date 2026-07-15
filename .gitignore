@@ -59,8 +59,31 @@ worklog.md
 /tool-results/
 /download/
 
-# Database (local SQLite — contains user data)
+# Database (local SQLite ? contains user data)
 /db/*.db
 /db/*.db-journal
 /db/*.db-wal
 /db/*.db-shm
+
+# DevForge AI additions
+# Prisma database (contains encrypted API keys + user data)
+prisma/db/
+prisma/*.db
+prisma/*.db-journal
+
+# Build artifacts
+installer/setup-builder-v2/Output/
+installer/setup-builder-v2/staging/
+installer/setup-builder-v2/build_log.txt
+.next/standalone/
+
+# Runtime
+runtime/
+
+# Notes (private)
+*.notes.txt
+superz_*.txt
+jad_*.txt
+
+# OS
+Thumbs.db

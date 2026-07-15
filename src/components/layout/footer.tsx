@@ -2,8 +2,11 @@
 
 import * as React from "react";
 import { Zap, Clock } from "lucide-react";
+import { APP_AUTHOR, getMailtoLink } from "@/lib/branding";
+import { useLanguage } from "@/components/language-provider";
 
 export function SiteFooter() {
+  const { t } = useLanguage();
   const [now, setNow] = React.useState<string>("");
 
   React.useEffect(() => {
@@ -26,8 +29,15 @@ export function SiteFooter() {
         <div className="flex items-center gap-2">
           <Zap className="h-3.5 w-3.5 text-primary" />
           <span>
-            <span className="font-semibold text-foreground">DevForge AI</span>{" "}
-            · Powered by Z.ai SDK
+            <span className="font-semibold text-foreground">{t("common.appName")}</span>{" "}
+            · {t("common.poweredBy")} ·{" "}
+            <a
+              href={getMailtoLink("DevForge AI — Hello")}
+              className="text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+              title={`Email ${APP_AUTHOR}`}
+            >
+              {t("common.craftedBy")} {t("common.author")}
+            </a>
           </span>
         </div>
         <div className="flex items-center gap-4">
@@ -40,7 +50,7 @@ export function SiteFooter() {
           )}
           <span className="hidden items-center gap-1.5 md:flex">
             <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-500" />
-            All systems operational
+            {t("common.allSystemsOperational")}
           </span>
         </div>
       </div>

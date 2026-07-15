@@ -25,32 +25,43 @@ import {
   Search,
   Zap,
   CornerDownLeft,
+  Info,
+  Languages,
+  Puzzle,
 } from "lucide-react";
-import type { FeatureKey } from "@/lib/features";
+import type { FeatureKey, ViewKey } from "@/lib/features";
+import { APP_AUTHOR } from "@/lib/branding";
 import { useHotkey } from "@/hooks/use-hotkey";
 import { useTheme } from "next-themes";
+import { useLanguage } from "@/components/language-provider";
+import {
+  usePalettePlugins,
+  resolvePluginIcon,
+} from "@/lib/plugin-registry";
 
-const NAV_ITEMS: {
+// Map each feature key to its icon, translation-key, and number shortcut.
+const NAV_META: {
   key: FeatureKey;
-  label: string;
+  labelKey: string;
   icon: React.ElementType;
   num: number;
 }[] = [
-  { key: "overview", label: "Overview", icon: Sparkles, num: 1 },
-  { key: "chat", label: "AI Chat", icon: Bot, num: 2 },
-  { key: "image", label: "Image Studio", icon: ImageIcon, num: 3 },
-  { key: "vision", label: "Vision Lab", icon: Eye, num: 4 },
-  { key: "voice", label: "Voice Lab", icon: AudioLines, num: 5 },
-  { key: "web", label: "Web Intelligence", icon: Globe, num: 6 },
-  { key: "snippets", label: "Snippet Vault", icon: Code2, num: 7 },
-  { key: "board", label: "Task Board", icon: KanbanSquare, num: 8 },
+  { key: "overview", labelKey: "sidebar.overview", icon: Sparkles, num: 1 },
+  { key: "chat", labelKey: "sidebar.chat", icon: Bot, num: 2 },
+  { key: "image", labelKey: "sidebar.images", icon: ImageIcon, num: 3 },
+  { key: "vision", labelKey: "sidebar.vision", icon: Eye, num: 4 },
+  { key: "voice", labelKey: "sidebar.voice", icon: AudioLines, num: 5 },
+  { key: "web", labelKey: "sidebar.web", icon: Globe, num: 6 },
+  { key: "snippets", labelKey: "sidebar.snippets", icon: Code2, num: 7 },
+  { key: "board", labelKey: "sidebar.tasks", icon: KanbanSquare, num: 8 },
 ];
 
 interface CommandPaletteProps {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  onNavigate: (k: FeatureKey) => void;
+  onNavigate: (k: ViewKey) => void;
   actions?: { label: string; run: () => void; icon?: React.ElementType }[];
+  onOpenAbout?: () => void;
 }
 
 export function CommandPalette({
@@ -58,11 +69,21 @@ export function CommandPalette({
   onOpenChange,
   onNavigate,
   actions = [],
+  onOpenAbout,
 }: CommandPaletteProps) {
   const { resolvedTheme, setTheme } = useTheme();
+  const { t, locale, setLocale } = useLanguage();
+  const plugins = usePalettePlugins();
+
+  const navItems = NAV_META.map((m) => ({
+    key: m.key,
+    label: t(m.labelKey),
+    icon: m.icon,
+    num: m.num,
+  }));
 
   const go = React.useCallback(
-    (k: FeatureKey) => {
+    (k: ViewKey) => {
       onNavigate(k);
       onOpenChange(false);
     },
@@ -85,12 +106,12 @@ export function CommandPalette({
 
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
-      <CommandInput placeholder="Type a command or search…" />
+      <CommandInput placeholder={t("command.placeholder")} />
       <CommandList>
-        <CommandEmpty>No results found.</CommandEmpty>
+        <CommandEmpty>{t("command.empty")}</CommandEmpty>
 
-        <CommandGroup heading="Navigate">
-          {NAV_ITEMS.map((item) => {
+        <CommandGroup heading={t("command.navigate")}>
+          {navItems.map((item) => {
             const Icon = item.icon;
             return (
               <CommandItem
@@ -106,10 +127,34 @@ export function CommandPalette({
           })}
         </CommandGroup>
 
+        {plugins.length > 0 && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={t("command.plugins")}>
+              {plugins.map((plugin) => {
+                const Icon = resolvePluginIcon(plugin.icon);
+                return (
+                  <CommandItem
+                    key={plugin.id}
+                    value={`plugin ${plugin.name} ${plugin.description} ${plugin.category}`}
+                    onSelect={() => go(plugin.id)}
+                  >
+                    <Icon className="text-muted-foreground" />
+                    <span>{plugin.name}</span>
+                    <span className="ml-2 truncate text-[10px] text-muted-foreground">
+                      {plugin.description}
+                    </span>
+                  </CommandItem>
+                );
+              })}
+            </CommandGroup>
+          </>
+        )}
+
         {quickActions.length > 0 && (
           <>
             <CommandSeparator />
-            <CommandGroup heading="Quick Actions">
+            <CommandGroup heading={t("command.quickActions")}>
               {quickActions.map((a) => {
                 const Icon = a.icon;
                 return (
@@ -124,7 +169,7 @@ export function CommandPalette({
         )}
 
         <CommandSeparator />
-        <CommandGroup heading="Appearance">
+        <CommandGroup heading={t("command.appearance")}>
           <CommandItem
             value="switch to light theme dark mode toggle"
             onSelect={() => {
@@ -133,7 +178,7 @@ export function CommandPalette({
             }}
           >
             <Sun className="text-muted-foreground" />
-            <span>Light theme</span>
+            <span>{t("command.lightTheme")}</span>
             {resolvedTheme === "light" && (
               <CornerDownLeft className="ml-auto h-3.5 w-3.5 text-primary" />
             )}
@@ -146,26 +191,67 @@ export function CommandPalette({
             }}
           >
             <Moon className="text-muted-foreground" />
-            <span>Dark theme</span>
+            <span>{t("command.darkTheme")}</span>
             {resolvedTheme === "dark" && (
               <CornerDownLeft className="ml-auto h-3.5 w-3.5 text-primary" />
             )}
           </CommandItem>
         </CommandGroup>
 
+        {/* Language switcher */}
+        <CommandSeparator />
+        <CommandGroup heading={t("command.switchLanguage")}>
+          <CommandItem
+            value="switch language english arabic translate i18n rtl ltr"
+            onSelect={() => {
+              setLocale("en");
+              onOpenChange(false);
+            }}
+          >
+            <Languages className="text-muted-foreground" />
+            <span>{t("command.switchToEnglish")}</span>
+            {locale === "en" && (
+              <CornerDownLeft className="ml-auto h-3.5 w-3.5 text-primary" />
+            )}
+          </CommandItem>
+          <CommandItem
+            value="switch language arabic english translate i18n rtl ltr عربي"
+            onSelect={() => {
+              setLocale("ar");
+              onOpenChange(false);
+            }}
+          >
+            <Languages className="text-muted-foreground" />
+            <span>{t("command.switchToArabic")}</span>
+            {locale === "ar" && (
+              <CornerDownLeft className="ml-auto h-3.5 w-3.5 text-primary" />
+            )}
+          </CommandItem>
+        </CommandGroup>
+
+        {onOpenAbout && (
+          <>
+            <CommandSeparator />
+            <CommandGroup heading={t("command.about")}>
+              <CommandItem
+                value={`about devforge ai author ${APP_AUTHOR} jad jbara version license contact`}
+                onSelect={() => {
+                  onOpenAbout();
+                  onOpenChange(false);
+                }}
+              >
+                <Info className="text-muted-foreground" />
+                <span>{t("command.aboutLine", { author: APP_AUTHOR })}</span>
+              </CommandItem>
+            </CommandGroup>
+          </>
+        )}
+
         <CommandSeparator />
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
           <Search className="h-3.5 w-3.5" />
           <span>
-            Press{" "}
-            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">
-              ⌘K
-            </kbd>{" "}
-            to open ·{" "}
-            <kbd className="rounded border bg-muted px-1 font-mono text-[10px]">
-              1–8
-            </kbd>{" "}
-            to jump
+            {t("command.footerHint", { kbd: "⌘K" })}
           </span>
         </div>
       </CommandList>
@@ -175,13 +261,16 @@ export function CommandPalette({
 
 /** Hook: manages palette open state + Cmd+K + number-key navigation. */
 export function useCommandPalette(
-  onNavigate: (k: FeatureKey) => void,
-  actions?: CommandPaletteProps["actions"]
+  onNavigate: (k: ViewKey) => void,
+  actions?: CommandPaletteProps["actions"],
+  onOpenAbout?: () => void
 ) {
   const [open, setOpen] = React.useState(false);
   useHotkey(["mod", "k"], () => setOpen((v) => !v));
 
-  // Number-key navigation (1-8) — only when not typing in a field
+  // Number-key navigation (1-8) — only when not typing in a field.
+  // Number keys map to the 8 built-in features only (plugins don't get
+  // number shortcuts — there's no fixed upper bound on their count).
   React.useEffect(() => {
     const onDown = (e: KeyboardEvent) => {
       if (open) return;
@@ -192,7 +281,7 @@ export function useCommandPalette(
       const n = parseInt(e.key, 10);
       if (n >= 1 && n <= 8) {
         e.preventDefault();
-        onNavigate(NAV_ITEMS[n - 1].key);
+        onNavigate(NAV_META[n - 1].key);
       }
     };
     window.addEventListener("keydown", onDown);
@@ -211,6 +300,7 @@ export function useCommandPalette(
         onOpenChange={setOpen}
         onNavigate={onNavigate}
         actions={actions}
+        onOpenAbout={onOpenAbout}
       />
     ),
   };

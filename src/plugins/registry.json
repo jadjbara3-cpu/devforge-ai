@@ -1,0 +1,7 @@
+{
+  "$schema": "https://devforge.ai/plugins/registry.schema.json",
+  "$comment": "Default enabled/disabled state for built-in plugins. Per-user overrides are persisted to localStorage('devforge-plugins-enabled-v1'). Add a plugin id here ONLY to change its default state. Plugins not listed here default to whatever their metadata in plugins/index.ts declares (currently all 'enabled: true').",
+  "translator": { "enabled": true },
+  "code-formatter": { "enabled": true },
+  "quick-notes": { "enabled": true }
+}
