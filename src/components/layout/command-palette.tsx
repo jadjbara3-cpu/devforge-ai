@@ -33,6 +33,8 @@ import {
   Workflow as WorkflowIcon,
   Bell,
   MonitorSmartphone,
+  Monitor,
+  Brain,
 } from "lucide-react";
 import {
   type FeatureKey,
@@ -65,7 +67,7 @@ const NAV_META: {
   { key: "board", labelKey: "sidebar.tasks", icon: KanbanSquare, num: 8 },
 ];
 
-// Assistant feature keys (Task 1-C) — no number shortcuts.
+// Assistant feature keys (Task 1-C + Computer Use + AI Memory) — no number shortcuts.
 const ASSISTANT_NAV_META: {
   key: AssistantFeatureKey;
   labelKey: string;
@@ -77,6 +79,8 @@ const ASSISTANT_NAV_META: {
   { key: "workflow", labelKey: "assistant.workflow.nav", descKey: "assistant.workflow.navDesc", icon: WorkflowIcon },
   { key: "proactive", labelKey: "assistant.proactive.nav", descKey: "assistant.proactive.navDesc", icon: Bell },
   { key: "screens", labelKey: "assistant.screens.nav", descKey: "assistant.screens.navDesc", icon: MonitorSmartphone },
+  { key: "computer", labelKey: "assistant.computer.nav", descKey: "assistant.computer.navDesc", icon: Monitor },
+  { key: "memory", labelKey: "assistant.memory.nav", descKey: "assistant.memory.navDesc", icon: Brain },
 ];
 
 interface CommandPaletteProps {

@@ -20,7 +20,6 @@ import {
   Globe,
   Code2,
   KanbanSquare,
-  Monitor,
   Info,
   Mail,
   Zap,
@@ -33,6 +32,8 @@ import {
   Workflow as WorkflowIcon,
   Bell,
   MonitorSmartphone,
+  Monitor,
+  Brain,
   Wand2,
 } from "lucide-react";
 import {
@@ -66,11 +67,10 @@ const NAV_META: {
   { key: "web", labelKey: "sidebar.web", descKey: "sidebar.desc.web", icon: Globe },
   { key: "snippets", labelKey: "sidebar.snippets", descKey: "sidebar.desc.snippets", icon: Code2 },
   { key: "board", labelKey: "sidebar.tasks", descKey: "sidebar.desc.tasks", icon: KanbanSquare },
-  { key: "computer", labelKey: "sidebar.computer", descKey: "sidebar.desc.computer", icon: Monitor },
 ];
 
 // ---------------------------------------------------------------------------
-// Assistant nav (5 new creative-AI features — Task 1-C)
+// Assistant nav (creative-AI features — Task 1-C + Computer Use + AI Memory)
 // ---------------------------------------------------------------------------
 
 const ASSISTANT_NAV_META: {
@@ -84,6 +84,8 @@ const ASSISTANT_NAV_META: {
   { key: "workflow", labelKey: "assistant.workflow.nav", descKey: "assistant.workflow.navDesc", icon: WorkflowIcon },
   { key: "proactive", labelKey: "assistant.proactive.nav", descKey: "assistant.proactive.navDesc", icon: Bell },
   { key: "screens", labelKey: "assistant.screens.nav", descKey: "assistant.screens.navDesc", icon: MonitorSmartphone },
+  { key: "computer", labelKey: "assistant.computer.nav", descKey: "assistant.computer.navDesc", icon: Monitor },
+  { key: "memory", labelKey: "assistant.memory.nav", descKey: "assistant.memory.navDesc", icon: Brain },
 ];
 
 export function Sidebar({

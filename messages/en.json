@@ -283,6 +283,20 @@
       "howItWorks": "How it works",
       "howItWorksDesc": "Each screen can run a different DevForge feature. Click \"Open popout\" to launch a small floating window on that monitor. The feature picker is saved per-screen.",
       "bounds": "Bounds: ({x}, {y}) · {w}×{h}px"
+    },
+    "computer": {
+      "nav": "Computer Use",
+      "navDesc": "AI controls your Windows",
+      "title": "Computer Use",
+      "subtitle": "AI controls your Windows — click, type, take screenshots, and run shell commands to accomplish any task.",
+      "tagline": "AI controls your Windows"
+    },
+    "memory": {
+      "nav": "AI Memory",
+      "navDesc": "Long-term memory + learning",
+      "title": "AI Memory",
+      "subtitle": "Long-term memory + learning. The assistant remembers facts, preferences, and code patterns across sessions.",
+      "tagline": "Long-term memory + learning"
     }
   }
 }

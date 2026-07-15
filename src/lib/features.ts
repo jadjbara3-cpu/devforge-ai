@@ -1,16 +1,16 @@
 /**
  * Feature registry for DevForge AI.
  *
- * The 9 built-in Workspace features are listed in `FEATURES` and their display
+ * The 8 built-in Workspace features are listed in `FEATURES` and their display
  * metadata in `FEATURE_META`. Plugins extend this set at runtime — see
  * `lib/plugin-registry.ts` and `plugins/index.ts`.
  *
  * `ViewKey` is the union of built-in feature keys + arbitrary plugin ids
  * (strings). Use `isFeatureKey(k)` to narrow to the built-in set.
  *
- * The 5 Assistant features (Task 1-C) live in `ASSISTANT_FEATURES` /
- * `ASSISTANT_META`. They're built-in (not plugins) and appear in their own
- * "ASSISTANT" sidebar section.
+ * The 7 Assistant features (Task 1-C + Computer Use + AI Memory) live in
+ * `ASSISTANT_FEATURES` / `ASSISTANT_META`. They're built-in (not plugins) and
+ * appear in their own "ASSISTANT" sidebar section.
  */
 
 export const FEATURES = [
@@ -22,7 +22,6 @@ export const FEATURES = [
   "web",
   "snippets",
   "board",
-  "computer",
 ] as const;
 
 export type FeatureKey = (typeof FEATURES)[number];
@@ -39,7 +38,6 @@ export const FEATURE_META: Record<
   web: { title: "Web Intelligence", tagline: "Search & read the live web" },
   snippets: { title: "Snippet Vault", tagline: "Your personal code library" },
   board: { title: "Task Board", tagline: "Real-time collaborative kanban" },
-  computer: { title: "Computer Use", tagline: "Local AI agent that controls Windows" },
 };
 
 // ---------------------------------------------------------------------------
@@ -52,6 +50,8 @@ export const ASSISTANT_FEATURES = [
   "workflow",
   "proactive",
   "screens",
+  "computer",
+  "memory",
 ] as const;
 
 export type AssistantFeatureKey = (typeof ASSISTANT_FEATURES)[number];
@@ -65,6 +65,8 @@ export const ASSISTANT_META: Record<
   workflow: { title: "Workflow Studio", tagline: "Record & replay UI actions" },
   proactive: { title: "Proactive AI", tagline: "Anticipates what you need" },
   screens: { title: "Multi-Screen", tagline: "One AI per monitor" },
+  computer: { title: "Computer Use", tagline: "AI controls your Windows" },
+  memory: { title: "AI Memory", tagline: "Long-term memory + learning" },
 };
 
 // ---------------------------------------------------------------------------
@@ -100,8 +102,8 @@ export function isFeatureKey(k: ViewKey): k is FeatureKey {
 }
 
 /**
- * Type guard: returns true if `k` is one of the 5 Assistant feature keys
- * added in Task 1-C.
+ * Type guard: returns true if `k` is one of the Assistant feature keys
+ * (clipboard, quickactions, workflow, proactive, screens, computer, memory).
  */
 export function isAssistantKey(k: ViewKey): k is AssistantFeatureKey {
   return ASSISTANT_KEY_SET.has(k as string);

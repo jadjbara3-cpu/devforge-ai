@@ -18,6 +18,10 @@ import {
   History,
   AlertCircle,
   AudioWaveform,
+  Globe,
+  Play,
+  StopCircle,
+  Palette,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -32,7 +36,9 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -44,6 +50,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { useToast } from "@/hooks/use-toast";
 import { useSettings } from "@/components/layout/settings";
 import { cn } from "@/lib/utils";
+import {
+  VOICES,
+  LANGUAGES,
+  VOICE_STYLES,
+  getVoiceById,
+  getVoicesByLanguage,
+  groupVoicesByLanguage,
+  isArabicText,
+  type Voice,
+  type VoiceStyle,
+} from "@/lib/voices";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -52,25 +69,41 @@ import { cn } from "@/lib/utils";
 const MAX_TEXT = 1024;
 const HISTORY_LIMIT = 5;
 
-const VOICE_OPTIONS: {
-  value: string;
-  label: string;
-  tag: string;
-}[] = [
-  { value: "tongtong", label: "Tongtong", tag: "Warm" },
-  { value: "chuichui", label: "Chuichui", tag: "Lively" },
-  { value: "xiaochen", label: "Xiaochen", tag: "Calm" },
-  { value: "jam", label: "Jam", tag: "British" },
-  { value: "kazi", label: "Kazi", tag: "Clear" },
-  { value: "douji", label: "Douji", tag: "Natural" },
-  { value: "luodo", label: "Luodo", tag: "Expressive" },
-];
-
 const SAMPLE_PROMPTS = [
   "Welcome to DevForge AI — where ideas compile into reality.",
   "The quick brown fox jumps over the lazy dog.",
   "Build, ship, and scale with confidence today.",
+  "مرحبا بك في DevForge AI، حيث تتحول الأفكار إلى واقع.",
+  "Bonjour et bienvenue dans DevForge AI.",
 ];
+
+/** Shorthand for the voice's gender badge color. */
+function genderColor(gender: Voice["gender"]): string {
+  switch (gender) {
+    case "female":
+      return "text-pink-500";
+    case "male":
+      return "text-blue-500";
+    default:
+      return "text-muted-foreground";
+  }
+}
+
+function genderLabel(gender: Voice["gender"]): string {
+  switch (gender) {
+    case "female":
+      return "Female";
+    case "male":
+      return "Male";
+    default:
+      return "Neutral";
+  }
+}
+
+/** Provider badge — short label shown next to each voice in the dropdown. */
+function providerLabel(provider: Voice["provider"]): string {
+  return provider === "zai" ? "Z.ai" : "OpenAI";
+}
 
 // ---------------------------------------------------------------------------
 // Types
@@ -80,8 +113,13 @@ interface TtsClip {
   id: string;
   text: string;
   voice: string;
+  language: string;
+  style: VoiceStyle;
   speed: number;
   url: string;
+  provider: "zai" | "openai" | "unknown";
+  fellBack?: boolean;
+  rtl: boolean;
   createdAt: number;
 }
 
@@ -94,12 +132,6 @@ function formatTime(totalSeconds: number): string {
   const m = Math.floor(s / 60);
   const r = s % 60;
   return `${m.toString().padStart(2, "0")}:${r.toString().padStart(2, "0")}`;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 // Pick a MediaRecorder mime type the current browser supports.
@@ -132,7 +164,12 @@ function TtsTab() {
   const [text, setText] = React.useState("");
   const [voice, setVoice] = React.useState<string>(settings.defaultTtsVoice);
   const [speed, setSpeed] = React.useState<number>(settings.defaultTtsSpeed);
+  const [style, setStyle] = React.useState<VoiceStyle>("neutral");
+  const [languageFilter, setLanguageFilter] = React.useState<string>("all");
   const [synthesizing, setSynthesizing] = React.useState(false);
+  const [previewingVoiceId, setPreviewingVoiceId] = React.useState<string | null>(
+    null,
+  );
   const [clips, setClips] = React.useState<TtsClip[]>([]);
 
   // Revoke object URLs on unmount / when clips change.
@@ -152,21 +189,59 @@ function TtsTab() {
   }, []);
   React.useEffect(() => () => revokeAll(), [revokeAll]);
 
+  // Filtered + grouped voice list, recomputed when the language filter changes.
+  const filteredVoices = React.useMemo(
+    () => getVoicesByLanguage(languageFilter),
+    [languageFilter],
+  );
+  const groupedVoices = React.useMemo(
+    () => groupVoicesByLanguage(filteredVoices),
+    [filteredVoices],
+  );
+
+  // If the user's selected voice isn't in the filtered list, snap to the
+  // first available voice so the Select always shows a valid value.
+  React.useEffect(() => {
+    if (filteredVoices.length === 0) return;
+    const stillValid = filteredVoices.some((v) => v.id === voice);
+    if (!stillValid) {
+      setVoice(filteredVoices[0].id);
+    }
+  }, [filteredVoices, voice]);
+
+  const voiceMeta = React.useMemo(
+    () => getVoiceById(voice),
+    [voice],
+  );
+
   const trimmed = text.trim();
   const overLimit = text.length > MAX_TEXT;
   const canSynthesize = trimmed.length > 0 && !overLimit && !synthesizing;
+  const textIsArabic = isArabicText(text);
 
-  const handleSynthesize = React.useCallback(async () => {
-    if (!canSynthesize) return;
-    setSynthesizing(true);
-    try {
+  // Core synthesis helper — used by both the main "Synthesize" button and
+  // the per-voice "preview" button.
+  const synthesize = React.useCallback(
+    async (opts: {
+      text: string;
+      voiceId: string;
+      styleId: VoiceStyle;
+      speedValue: number;
+    }): Promise<TtsClip | null> => {
+      const { text: synthText, voiceId, styleId, speedValue } = opts;
+      const meta = getVoiceById(voiceId);
+      const language =
+        meta?.languageCode ?? (isArabicText(synthText) ? "ar" : "en");
+
       const res = await fetch("/api/tts", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          text: trimmed,
-          voice,
-          speed,
+          text: synthText,
+          voice: voiceId,
+          language,
+          style: styleId,
+          speed: speedValue,
         }),
       });
 
@@ -186,23 +261,57 @@ function TtsTab() {
       const url = URL.createObjectURL(blob);
       registerUrl(url);
 
+      const providerHeader = res.headers.get("X-TTS-Provider");
+      const fellBack = res.headers.get("X-TTS-Fallback") === "zai-unavailable";
+      const rtl =
+        res.headers.get("X-TTS-RTL") === "1" || isArabicText(synthText);
+
+      const provider: TtsClip["provider"] =
+        providerHeader === "zai" || providerHeader === "openai"
+          ? providerHeader
+          : "unknown";
+
       const clip: TtsClip = {
         id:
           typeof crypto !== "undefined" && "randomUUID" in crypto
             ? crypto.randomUUID()
             : `clip-${Date.now()}`,
-        text: trimmed,
-        voice,
-        speed,
+        text: synthText,
+        voice: voiceId,
+        language,
+        style: styleId,
+        speed: speedValue,
         url,
+        provider,
+        fellBack,
+        rtl,
         createdAt: Date.now(),
       };
-      setClips((prev) => [clip, ...prev].slice(0, HISTORY_LIMIT));
+      return clip;
+    },
+    [registerUrl],
+  );
 
-      toast({
-        title: "Audio synthesized",
-        description: `${formatBytes(blob.size)} · ${voice} · ${speed.toFixed(1)}× speed`,
+  const handleSynthesize = React.useCallback(async () => {
+    if (!canSynthesize) return;
+    setSynthesizing(true);
+    try {
+      const clip = await synthesize({
+        text: trimmed,
+        voiceId: voice,
+        styleId: style,
+        speedValue: speed,
       });
+      if (clip) {
+        setClips((prev) => [clip, ...prev].slice(0, HISTORY_LIMIT));
+        const meta = getVoiceById(clip.voice);
+        toast({
+          title: "Audio synthesized",
+          description: `${meta?.name ?? clip.voice} · ${clip.style} · ${clip.speed.toFixed(1)}×${
+            clip.fellBack ? " · (OpenAI fallback)" : ""
+          }`,
+        });
+      }
     } catch (err) {
       console.error("[voice-lab/tts] error:", err);
       toast({
@@ -214,7 +323,93 @@ function TtsTab() {
     } finally {
       setSynthesizing(false);
     }
-  }, [canSynthesize, trimmed, voice, speed, registerUrl, toast]);
+  }, [canSynthesize, trimmed, voice, style, speed, synthesize, toast]);
+
+  // Per-voice preview — synthesizes a short sample phrase in the voice's
+  // native language, plays it once, and discards the clip (no history entry).
+  const previewAudioRef = React.useRef<HTMLAudioElement | null>(null);
+  const handlePreview = React.useCallback(
+    async (voiceId: string) => {
+      const meta = getVoiceById(voiceId);
+      if (!meta) return;
+      const sample =
+        meta.preview ??
+        "Hello! This is a voice preview from DevForge AI.";
+
+      // Stop any in-flight preview playback.
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+
+      setPreviewingVoiceId(voiceId);
+      try {
+        const clip = await synthesize({
+          text: sample,
+          voiceId,
+          styleId: "neutral",
+          speedValue: 1.0,
+        });
+        if (clip) {
+          const audio = new Audio(clip.url);
+          previewAudioRef.current = audio;
+          audio.onended = () => {
+            setPreviewingVoiceId(null);
+            try {
+              URL.revokeObjectURL(clip.url);
+            } catch {
+              /* noop */
+            }
+          };
+          audio.onerror = () => {
+            setPreviewingVoiceId(null);
+            try {
+              URL.revokeObjectURL(clip.url);
+            } catch {
+              /* noop */
+            }
+          };
+          await audio.play().catch(() => {
+            // Autoplay can be blocked — surface a toast so the user knows.
+            toast({
+              variant: "destructive",
+              title: "Preview blocked",
+              description: "Click the play button to hear the sample.",
+            });
+            setPreviewingVoiceId(null);
+          });
+        }
+      } catch (err) {
+        console.error("[voice-lab/preview] error:", err);
+        toast({
+          variant: "destructive",
+          title: "Preview failed",
+          description:
+            err instanceof Error ? err.message : "Please try another voice.",
+        });
+        setPreviewingVoiceId(null);
+      }
+    },
+    [synthesize, toast],
+  );
+
+  const handleStopPreview = React.useCallback(() => {
+    if (previewAudioRef.current) {
+      previewAudioRef.current.pause();
+      previewAudioRef.current = null;
+    }
+    setPreviewingVoiceId(null);
+  }, []);
+
+  React.useEffect(
+    () => () => {
+      if (previewAudioRef.current) {
+        previewAudioRef.current.pause();
+        previewAudioRef.current = null;
+      }
+    },
+    [],
+  );
 
   const handleRemoveClip = React.useCallback(
     (id: string) => {
@@ -291,6 +486,7 @@ function TtsTab() {
               onChange={(e) => setText(e.target.value)}
               placeholder="Type the text you want to hear…"
               rows={6}
+              dir={textIsArabic ? "rtl" : "ltr"}
               className={cn(
                 "resize-none bg-background/60",
                 overLimit &&
@@ -312,33 +508,228 @@ function TtsTab() {
             </div>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
+          {/* Language filter */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <label
+                htmlFor="tts-lang"
+                className="text-sm font-medium text-foreground"
+              >
+                Language
+              </label>
+              <span className="text-[10px] text-muted-foreground">
+                {filteredVoices.length} voice{filteredVoices.length === 1 ? "" : "s"}
+              </span>
+            </div>
+            <Select
+              value={languageFilter}
+              onValueChange={setLanguageFilter}
+            >
+              <SelectTrigger
+                id="tts-lang"
+                className="w-full"
+                aria-label="Filter voices by language"
+              >
+                <SelectValue placeholder="All languages" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">
+                  <span className="flex items-center gap-2">
+                    <Globe className="size-3.5 text-primary" />
+                    <span>All languages</span>
+                  </span>
+                </SelectItem>
+                {LANGUAGES.map((lang) => {
+                  const count = VOICES.filter(
+                    (v) =>
+                      v.languageCode.split("-")[0].toLowerCase() ===
+                      lang.code.toLowerCase(),
+                  ).length;
+                  if (count === 0) return null;
+                  return (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      <span className="flex items-center gap-2">
+                        <Globe className="size-3.5 text-muted-foreground" />
+                        <span>{lang.name}</span>
+                        <span className="text-[11px] text-muted-foreground" dir={lang.rtl ? "rtl" : "ltr"}>
+                          {lang.nativeName}
+                        </span>
+                        <Badge
+                          variant="secondary"
+                          className="ml-auto px-1.5 py-0 text-[10px] font-normal"
+                        >
+                          {count}
+                        </Badge>
+                      </span>
+                    </SelectItem>
+                  );
+                })}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Voice + Preview */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
               <label
                 htmlFor="tts-voice"
                 className="text-sm font-medium text-foreground"
               >
                 Voice
               </label>
+              {voiceMeta && (
+                <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <Badge
+                    variant="outline"
+                    className="px-1.5 py-0 text-[10px] font-normal"
+                  >
+                    {providerLabel(voiceMeta.provider)}
+                  </Badge>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      "px-1.5 py-0 text-[10px] font-normal capitalize",
+                      genderColor(voiceMeta.gender),
+                    )}
+                  >
+                    {genderLabel(voiceMeta.gender)}
+                  </Badge>
+                  {voiceMeta.dialect && (
+                    <Badge
+                      variant="outline"
+                      className="px-1.5 py-0 text-[10px] font-normal"
+                    >
+                      {voiceMeta.dialect}
+                    </Badge>
+                  )}
+                </span>
+              )}
+            </div>
+            <div className="flex gap-2">
               <Select value={voice} onValueChange={setVoice}>
                 <SelectTrigger
                   id="tts-voice"
-                  className="w-full"
+                  className="min-w-0 flex-1"
                   aria-label="Voice"
                 >
                   <SelectValue placeholder="Choose a voice" />
                 </SelectTrigger>
                 <SelectContent>
-                  {VOICE_OPTIONS.map((v) => (
-                    <SelectItem key={v.value} value={v.value}>
+                  {groupedVoices.length === 0 ? (
+                    <SelectItem value="__empty__" disabled>
+                      No voices for this language
+                    </SelectItem>
+                  ) : (
+                    groupedVoices.map((group) => (
+                      <SelectGroup key={group.language}>
+                        <SelectLabel className="flex items-center justify-between gap-2">
+                          <span>{group.language}</span>
+                          <span className="text-[10px] text-muted-foreground">
+                            {group.voices.length}
+                          </span>
+                        </SelectLabel>
+                        {group.voices.map((v) => (
+                          <SelectItem key={v.id} value={v.id}>
+                            <span className="flex items-center gap-2">
+                              <Volume2 className="size-3.5 text-primary" />
+                              <span>{v.name}</span>
+                              <Badge
+                                variant="secondary"
+                                className="px-1.5 py-0 text-[10px] font-normal"
+                              >
+                                {providerLabel(v.provider)}
+                              </Badge>
+                              {v.dialect && (
+                                <Badge
+                                  variant="secondary"
+                                  className="px-1.5 py-0 text-[10px] font-normal"
+                                >
+                                  {v.dialect}
+                                </Badge>
+                              )}
+                              <span
+                                className={cn(
+                                  "ml-auto text-[10px] uppercase",
+                                  genderColor(v.gender),
+                                )}
+                                aria-label={genderLabel(v.gender)}
+                              >
+                                {v.gender === "female"
+                                  ? "F"
+                                  : v.gender === "male"
+                                    ? "M"
+                                    : "N"}
+                              </span>
+                            </span>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={() =>
+                  previewingVoiceId === voice
+                    ? handleStopPreview()
+                    : handlePreview(voice)
+                }
+                disabled={!voiceMeta}
+                aria-label={
+                  previewingVoiceId === voice
+                    ? "Stop preview"
+                    : "Preview voice"
+                }
+                title={
+                  previewingVoiceId === voice
+                    ? "Stop preview"
+                    : "Preview voice"
+                }
+                className="shrink-0"
+              >
+                {previewingVoiceId === voice ? (
+                  <StopCircle className="size-4" />
+                ) : (
+                  <Play className="size-4" />
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Style + Speed */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <label
+                htmlFor="tts-style"
+                className="text-sm font-medium text-foreground"
+              >
+                Style
+              </label>
+              <Select
+                value={style}
+                onValueChange={(v) => setStyle(v as VoiceStyle)}
+              >
+                <SelectTrigger
+                  id="tts-style"
+                  className="w-full"
+                  aria-label="Voice style"
+                >
+                  <SelectValue placeholder="Neutral" />
+                </SelectTrigger>
+                <SelectContent>
+                  {VOICE_STYLES.map((s) => (
+                    <SelectItem key={s.value} value={s.value}>
                       <span className="flex items-center gap-2">
-                        <Volume2 className="size-3.5 text-primary" />
-                        <span>{v.label}</span>
+                        <Palette className="size-3.5 text-muted-foreground" />
+                        <span className="capitalize">{s.label}</span>
                         <Badge
                           variant="secondary"
-                          className="ml-1 px-1.5 py-0 text-[10px] font-normal"
+                          className="ml-auto px-1.5 py-0 text-[10px] font-normal tabular-nums"
                         >
-                          {v.tag}
+                          {s.speedMultiplier.toFixed(2)}×
                         </Badge>
                       </span>
                     </SelectItem>
@@ -457,8 +848,12 @@ function TtsTab() {
               <div className="space-y-3">
                 <AnimatePresence initial={false}>
                   {clips.map((clip) => {
-                    const voiceMeta = VOICE_OPTIONS.find(
-                      (v) => v.value === clip.voice,
+                    const clipVoiceMeta = getVoiceById(clip.voice);
+                    const clipLangCode =
+                      clipVoiceMeta?.languageCode ?? clip.language ?? "";
+                    const clipLangBase = clipLangCode.split("-")[0].toLowerCase();
+                    const clipLangRecord = LANGUAGES.find(
+                      (l) => l.code.toLowerCase() === clipLangBase,
                     );
                     return (
                       <motion.div
@@ -471,8 +866,11 @@ function TtsTab() {
                         className="rounded-lg border border-border/70 bg-card/60 p-3 shadow-sm"
                       >
                         <div className="mb-2 flex items-start justify-between gap-2">
-                          <p className="line-clamp-2 flex-1 text-sm text-foreground">
-                            “{clip.text}”
+                          <p
+                            className="line-clamp-2 flex-1 text-sm text-foreground"
+                            dir={clip.rtl ? "rtl" : "ltr"}
+                          >
+                            {clip.text}
                           </p>
                           <button
                             type="button"
@@ -486,12 +884,33 @@ function TtsTab() {
                         <div className="mb-2 flex flex-wrap items-center gap-1.5">
                           <Badge variant="secondary" className="gap-1">
                             <Volume2 className="size-3" />
-                            {voiceMeta?.label ?? clip.voice}
+                            {clipVoiceMeta?.name ?? clip.voice}
+                          </Badge>
+                          {clipLangRecord && (
+                            <Badge variant="secondary" className="gap-1">
+                              <Globe className="size-3" />
+                              {clipLangRecord.name}
+                            </Badge>
+                          )}
+                          <Badge
+                            variant="outline"
+                            className="gap-1 capitalize"
+                          >
+                            {clip.style}
                           </Badge>
                           <Badge variant="outline" className="tabular-nums">
                             {clip.speed.toFixed(1)}×
                           </Badge>
-                          <span className="text-[10px] text-muted-foreground">
+                          {clip.fellBack && (
+                            <Badge
+                              variant="outline"
+                              className="gap-1 border-amber-500/40 text-amber-600 dark:text-amber-400"
+                            >
+                              <AlertCircle className="size-3" />
+                              Fallback
+                            </Badge>
+                          )}
+                          <span className="ml-auto text-[10px] text-muted-foreground">
                             {new Date(clip.createdAt).toLocaleTimeString()}
                           </span>
                         </div>
@@ -510,7 +929,9 @@ function TtsTab() {
                           >
                             <a
                               href={clip.url}
-                              download={`tts-${clip.id}.wav`}
+                              download={`tts-${clip.id}.${
+                                clip.provider === "zai" ? "wav" : "mp3"
+                              }`}
                             >
                               <Download className="size-3.5" />
                               <span className="sr-only sm:not-sr-only">

@@ -14,6 +14,8 @@ import { ClipboardManager } from "@/components/features/clipboard-manager";
 import { WorkflowStudio } from "@/components/features/workflow-studio";
 import { ProactiveAssistant } from "@/components/features/proactive-assistant";
 import { MultiScreenDashboard } from "@/components/features/multi-screen-dashboard";
+import { ComputerUse } from "@/components/features/computer-use";
+import { MemoryManager } from "@/components/features/memory-manager";
 import { QuickActions } from "@/components/features/quick-actions";
 import { SiteFooter } from "@/components/layout/footer";
 import { useCommandPalette } from "@/components/layout/command-palette";
@@ -96,7 +98,7 @@ export default function Home() {
             {active === "snippets" && <SnippetVault />}
             {active === "board" && <TaskBoard />}
 
-            {/* Assistant features (Task 1-C) */}
+            {/* Assistant features (Task 1-C + Computer Use + AI Memory) */}
             {active === "clipboard" && <ClipboardManager />}
             {active === "quickactions" && (
               <QuickActionsInfo
@@ -106,6 +108,8 @@ export default function Home() {
             {active === "workflow" && <WorkflowStudio />}
             {active === "proactive" && <ProactiveAssistant />}
             {active === "screens" && <MultiScreenDashboard />}
+            {active === "computer" && <ComputerUse />}
+            {active === "memory" && <MemoryManager />}
 
             {/* Plugin view — renders the plugin's lazy component, if any. */}
             {activePlugin && <PluginView plugin={activePlugin} />}
