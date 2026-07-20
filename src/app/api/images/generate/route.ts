@@ -65,6 +65,51 @@ export async function POST(req: NextRequest) {
       base64 = response.data?.[0]?.base64;
     } catch (genErr) {
       console.error("[images/generate] ZAI call failed:", genErr);
+
+      // Parse the error to give a helpful, actionable message.
+      const errStr = genErr instanceof Error ? genErr.message : String(genErr);
+
+      // Content filter rejection (Z.ai error code 1301)
+      if (errStr.includes("1301") || errStr.includes("contentFilter")) {
+        return NextResponse.json(
+          {
+            error:
+              "Your prompt was flagged by the content safety filter. " +
+              "Please rephrase it and avoid sensitive or unsafe content, then try again.",
+          },
+          { status: 400 },
+        );
+      }
+
+      // Rate limit
+      if (errStr.includes("429") || errStr.toLowerCase().includes("rate limit")) {
+        return NextResponse.json(
+          {
+            error:
+              "Rate limit reached. Please wait a moment before generating another image.",
+          },
+          { status: 429 },
+        );
+      }
+
+      // Authentication / configuration error
+      if (
+        errStr.includes("401") ||
+        errStr.includes("403") ||
+        errStr.toLowerCase().includes("config") ||
+        errStr.toLowerCase().includes("api key")
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              "AI provider is not configured or the API key is invalid. " +
+              "Open Settings (Ctrl+,) to configure your provider.",
+          },
+          { status: 503 },
+        );
+      }
+
+      // Generic service error
       return NextResponse.json(
         {
           error:
