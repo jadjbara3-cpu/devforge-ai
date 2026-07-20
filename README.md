@@ -1,4 +1,24 @@
-# DevForge AI
+
+
+
+
+## 🚀 Why DevForge AI?
+
+**8 AI modules. One dashboard. Zero friction.**
+
+DevForge AI isn't just another AI tool — it's a complete AI developer workspace that brings together LLM chat, image generation, vision analysis, voice, web search, code snippets, and a real-time task board. All in one place. All beautifully designed.
+
+## 📸 Demo
+
+![DevForge AI Demo](https://via.placeholder.com/800x450?text=DevForge+AI+Demo+-+Add+Screenshot+Here)
+
+## 🤝 Contributing
+
+Contributions are welcome! Feel free to open issues, submit PRs, or suggest features.
+
+## ⭐ Support
+
+If you find this project useful, please give it a ⭐ on GitHub — it helps others discover it!# DevForge AI
 
 > An all-in-one AI developer workspace built with Next.js 16, TypeScript, and the Z.ai SDK.
 
